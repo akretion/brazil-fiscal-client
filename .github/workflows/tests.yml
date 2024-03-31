@@ -1,0 +1,57 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  tests:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: Python 3.8, python: '3.8'}
+          - {name: Python 3.9, python: '3.9'}
+          - {name: Python 3.10, python: '3.10'}
+          - {name: Python 3.11, python: '3.11'}
+          - {name: Python 3.12, python: '3.12'}
+          - {name: Python 3.13, python: '3.13-dev'}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install libxml2
+        if: startsWith(matrix.python, '3.13')
+        run: |
+          sudo apt-get install libxml2-dev libxslt-dev
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install .[lxml,cli,test,soap]
+      - name: Test
+        run: |
+          pytest --cov=./soap_client.py --cov-report=xml --cov-branch --doctest-glob="docs/*.md"
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+  pre-commit:
+    name: Pre-commit Hooks
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+    - uses: pre-commit/action@v3.0.1
+  check-package:
+    name: Build & Inspect Package.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hynek/build-and-inspect-python-package@v1
