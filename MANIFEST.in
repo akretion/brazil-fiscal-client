@@ -1,0 +1,10 @@
+include LICENSE README.md
+recursive-include tests *
+recursive-include brazil_fiscal_client *
+
+
+exclude .readthedocs.yml
+exclude .mkdocs.yml
+exclude .pre-commit-config.yaml
+
+global-exclude .DS_Store *.pyc
