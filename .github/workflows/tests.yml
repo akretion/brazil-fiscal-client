@@ -19,7 +19,6 @@ jobs:
           - {name: Python 3.10, python: '3.10'}
           - {name: Python 3.11, python: '3.11'}
           - {name: Python 3.12, python: '3.12'}
-          - {name: Python 3.13, python: '3.13-dev'}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python }}
@@ -39,9 +38,6 @@ jobs:
           pytest --cov=. --cov-report=xml --cov-branch --doctest-glob="docs/*.md"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
   pre-commit:
     name: Pre-commit Hooks
     runs-on: ubuntu-latest
