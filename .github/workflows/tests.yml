@@ -36,7 +36,7 @@ jobs:
           python -m pip install .[lxml,cli,test,soap]
       - name: Test
         run: |
-          pytest --cov=./soap_client.py --cov-report=xml --cov-branch --doctest-glob="docs/*.md"
+          pytest --cov=. --cov-report=xml --cov-branch --doctest-glob="docs/*.md"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

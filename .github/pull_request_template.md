@@ -14,7 +14,5 @@ Resolves #xxxx
 
 ## 🛫 Checklist
 
-- [ ] Updated docs
-- [ ] Added unit-tests
-- [ ] [Sample tests](https://github.com/tefra/xsdata-samples) pass
-- [ ] [W3C tests](https://github.com/tefra/xsdata-w3c-tests) pass
+- [ ] nfelib-client tests
+- [ ] OCA/l10n-brazil tests
