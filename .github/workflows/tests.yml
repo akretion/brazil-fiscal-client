@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          python -m pip install .[lxml,cli,test,soap]
+          python -m pip install .[test]
       - name: Test
         run: |
           pytest --cov=. --cov-report=xml --cov-branch --doctest-glob="docs/*.md"
