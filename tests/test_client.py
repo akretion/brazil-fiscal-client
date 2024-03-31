@@ -3,7 +3,7 @@ from unittest import TestCase, mock
 from xsdata.formats.dataclass.client import Config
 from xsdata.formats.dataclass.transports import DefaultTransport
 
-from soap_client import SoapClient as Client
+from brazil_fiscal_client.soap_client import SoapClient as Client
 from tests.fixtures.cons_stat_serv_v4_00 import ConsStatServ
 from tests.fixtures.nfestatusservico4 import NfeStatusServico4SoapNfeStatusServicoNf
 from tests.fixtures.ret_cons_stat_serv_v4_00 import RetConsStatServ
