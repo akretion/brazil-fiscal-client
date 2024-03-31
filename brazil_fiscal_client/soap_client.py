@@ -21,7 +21,6 @@ RETRIES = 3
 BACKOFF_FACTOR = 0.1
 RETRY_ERRORS = (500, 502, 503, 504)
 TIMEOUT = 20.0
-PRETTY_PRINT = True  # since waiting the fisc server is 3+ sec, perf penaly is OK
 
 
 class Tamb(Enum):
@@ -73,9 +72,7 @@ class SoapClient(Client):
     ambiente: Tamb = None
     uf: TcodUfIbge = "undef"
     versao: str = "undef"
-    serializer: XmlSerializer = XmlSerializer(
-        config=SerializerConfig(pretty_print=PRETTY_PRINT)
-    )
+    serializer: XmlSerializer = XmlSerializer(config=SerializerConfig())
     parser: XmlParser = XmlParser()
     transport: Transport = DefaultTransport()
     verify_ssl: bool = False  # TODO is it a decent default?
