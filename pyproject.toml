@@ -59,7 +59,7 @@ include-package-data = true
 license-files = ["LICENSE"]
 
 [tool.setuptools.dynamic]
-version = {attr = "version.__version__"}
+version = {attr = "brazil_fiscal_client.__version__"}
 
 [tool.ruff]
 target-version = "py38"
