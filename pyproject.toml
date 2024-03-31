@@ -42,19 +42,13 @@ content-type = "text/markdown"
 [project.urls]
 Homepage = "https://github.com/akretion/brazil-fiscal-client"
 Source = "https://github.com/akretion/brazil-fiscal-client"
+Documentation = "https://github.com/akretion/brazil-fiscal-client"
 
-docs = [
-    "mkdocs",
-    "mkdocs-gen-files",
-    "mkdocs-literate-nav",
-    "mkdocs-material",
-    "mkdocs-minify-plugin",
-    "mkdocstrings[python]",
-    "markdown-exec[ansi]",
-    "pymdownx-superfence-filter-lines",
-]
+[project.optional-dependencies]
 test = [
     "pre-commit",
+    "pytest",
+    "pytest-cov",
 ]
 
 [project.scripts]
@@ -65,7 +59,7 @@ include-package-data = true
 license-files = ["LICENSE"]
 
 [tool.setuptools.dynamic]
-version = {attr = "soap_client.__version__"}
+version = {attr = "version.__version__"}
 
 [tool.ruff]
 target-version = "py38"
