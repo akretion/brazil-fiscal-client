@@ -128,7 +128,7 @@ class SoapClient(Client):
         self,
         action_class: Type,
         obj: Any,
-        return_type: Type,
+        return_type: Optional[Type] = None,
         headers: Optional[Dict] = None,
         placeholder_exp: str = "",
         placeholder_content: str = "",

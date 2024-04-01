@@ -81,7 +81,6 @@ class ClientTests(TestCase):
                 xServ="STATUS",
                 versao="4.00",
             ),
-            RetConsStatServ,
         )
 
         self.assertIsInstance(result, RetConsStatServ)
