@@ -62,7 +62,7 @@ class TcodUfIbge(Enum):
     VALUE_53 = "53"
 
 
-class SoapClient(Client):
+class FiscalClient(Client):
     """A Brazilian fiscal wsdl client."""
 
     pkcs12_data: bytes = None
@@ -72,6 +72,7 @@ class SoapClient(Client):
     ambiente: Tamb = None
     uf: TcodUfIbge = "undef"
     versao: str = "undef"
+    service: str = "nfe"
     serializer: XmlSerializer = XmlSerializer(config=SerializerConfig())
     parser: XmlParser = XmlParser()
     transport: Transport = DefaultTransport()
@@ -79,37 +80,40 @@ class SoapClient(Client):
 
     def __init__(
         self,
-        config: Config,
-        versao: str = "undef",
-    ):
-        self.versao = versao
-
-    @classmethod
-    def from_service(
-        cls,
-        ambiente: Tamb,
+        ambiente: str,
         uf: TcodUfIbge,
         pkcs12_data: bytes,
         pkcs12_password: str,
-        obj: Optional[Type] = None,
         fake_certificate: bool = False,
-        verify_ssl: bool = False,
         server: Optional[str] = None,
-        **kwargs: str,
-    ) -> Client:
-        """Instantiate client from a service definition."""
-        client = cls(config=Config.from_service(obj, **kwargs))
-        client.ambiente = ambiente
-        client.pkcs12_data = pkcs12_data
-        client.pkcs12_password = pkcs12_password
-        client.fake_certificate = fake_certificate
-        client.verify_ssl = verify_ssl
-        client.uf = uf
+        config: Config = None,
+        versao: str = "undef",
+        service: str = "nfe",
+        verify_ssl: bool = False,
+        transport: Optional[Transport] = None,
+        parser: Optional[XmlParser] = None,
+        serializer: Optional[XmlSerializer] = None,
+    ):
+        if config is None:
+            config = {
+                "style": "document",
+                "transport": "http://schemas.xmlsoap.org/soap/http",
+            }
+        super().__init__(
+            config=config, transport=transport, parser=parser, serializer=serializer
+        )
+        self.ambiente = ambiente
+        self.uf = uf
+        self.pkcs12_data = pkcs12_data
+        self.pkcs12_password = pkcs12_password
+        self.fake_certificate = fake_certificate
+        self.verify_ssl = verify_ssl
+        self.service = service
+        self.versao = versao
         if server:
-            client.server = server
-        elif not kwargs.get("location"):
-            client.server = client.get_server("nfe", uf)
-        return client
+            self.server = server
+        else:
+            self.server = self._get_server(service, uf)
 
     @classmethod
     def _get_server(cls, service: str, uf: str) -> str:
