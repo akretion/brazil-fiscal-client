@@ -15,6 +15,8 @@ from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 from xsdata.formats.dataclass.transports import DefaultTransport, Transport
 
+from brazil_fiscal_client.fiscal_envelope import FiscalSoapAction
+
 _logger = logging.Logger(__name__)
 
 RETRIES = 3
@@ -130,7 +132,7 @@ class FiscalClient(Client):
 
     def send(
         self,
-        action_class: Type,
+        action: Any,
         obj: Any,
         return_type: Optional[Type] = None,
         headers: Optional[Dict] = None,
@@ -138,9 +140,21 @@ class FiscalClient(Client):
         placeholder_content: str = "",
     ) -> Any:
         """Build and send a request for the input object."""
-        path = "/".join(["/ws"] + action_class.location.split("/")[-2:])
-        # FIXME some UF may not have /ws and might need a "?wsdl" suffix
-        location = self.server + path
+        if isinstance(action, Type):
+            # case when an action_class generated from a wsdl file is provided:
+            action_class = action
+            path = "/".join(["/ws"] + action_class.location.split("/")[-2:])
+            # FIXME some UF may not have /ws and might need a "?wsdl" suffix
+            location = self.server + path
+            dadosMsg = self.service + "DadosMsg"
+            resultMsg = self.service + "ResultMsg"
+        else:
+            # case where the generic FiscalEnvelope will be used:
+            action_class = FiscalSoapAction
+            location = action if action.startswith("http") else self.server + action
+            dadosMsg = "fiscalDadosMsg"
+            resultMsg = "fiscalResultMsg"
+
         self.config = Config.from_service(action_class, location=location)
 
         if isinstance(obj, Dict):  # see superclass
@@ -148,7 +162,7 @@ class FiscalClient(Client):
             obj = decoder.decode(obj, self.config.input)
 
         if not isinstance(obj, dict) and not isinstance(obj, Type):
-            obj = {"Body": {"nfeDadosMsg": {"content": [obj]}}}
+            obj = {"Body": {dadosMsg: {"content": [obj]}}}
 
         self.transport.session.verify = self.verify_ssl
 
@@ -172,16 +186,36 @@ class FiscalClient(Client):
         _logger.debug("SOAP REQUEST URL", self.config.location)
         data = self.prepare_payload(obj, placeholder_exp, placeholder_content)
         _logger.debug("SOAP REQUEST DATA: ", data)
+        print(data)
+        if action_class == FiscalSoapAction:
+            data = data.replace("fiscalDadosMsg", "nfeDadosMsg").replace(
+                "fiscalResultMsg", "nfeResultMsg"
+            )
+        print(data)
         headers = self.prepare_headers(headers or {})
-        response = self.transport.post(self.config.location, data=data, headers=headers)
-        response = self.parser.from_bytes(response, self.config.output)
+        response = self.transport.post(
+            self.config.location, data=data, headers=headers
+        ).decode()
+        if action_class == FiscalSoapAction:
+            response = response.replace("nfeDadosMsg", "fiscalDadosMsg").replace(
+                "nfeResultMsg", "fiscalResultMsg"
+            )
+            response = response.replace(
+                'xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeStatusServico4"',
+                'xmlns="fiscal_namespace"',
+            )
+
+        print("\n\n", response)
+        print(self.config.output)
+
+        response = self.parser.from_string(response, self.config.output)
         _logger.debug("SOAP RESPONSE DATA:", response)
 
         # the challenge with the Fiscal SOAP is the return type
         # is a wildcard in the WSDL, so here we help xsdata to figure
         # out which dataclass to use to parse the resultMsg content
         # based on the XML qname of the element.
-        anyElement = response.body.nfeResultMsg.content[0]  # TODO safe guard
+        anyElement = getattr(response.body, resultMsg).content[0]  # TODO safe guard
         anyElement.qname = None
         anyElement.text = None
         # TODO deal with children or attributes (and remove their qname and text) ?
