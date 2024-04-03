@@ -31,7 +31,8 @@ requires-python = ">=3.8"
 dependencies = [
     "xsdata",
     "requests",
-    "requests-pkcs12"
+    "requests-pkcs12",
+    "lxml>=4.5.0",
 ]
 dynamic = ["version"]
 

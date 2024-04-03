@@ -98,15 +98,16 @@ class FiscalClientTests(TestCase):
 
     def test_send_with_real_certificate(self):
         if not environ.get("CERT_FILE"):
-            return True
+            return
+        with open(environ["CERT_FILE"], "rb") as buffer:
+            pkcs12_data = buffer.read()
 
         client = FiscalClient(
             server="https://nfe-homologacao.svrs.rs.gov.br",
             ambiente="2",
             uf=41,
-            pkcs12_data=environ["CERT_FILE"],
+            pkcs12_data=pkcs12_data,
             pkcs12_password=environ["CERT_PASSWORD"],
-            fake_certificate=True,
         )
 
         result = client.send(
