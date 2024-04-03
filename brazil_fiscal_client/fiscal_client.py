@@ -12,9 +12,7 @@ from lxml import etree
 from requests.adapters import HTTPAdapter, Retry
 from requests_pkcs12 import Pkcs12Adapter
 from xsdata.formats.dataclass.client import Client, Config
-from xsdata.formats.dataclass.parsers import DictDecoder, XmlParser
-from xsdata.formats.dataclass.serializers import XmlSerializer
-from xsdata.formats.dataclass.transports import Transport
+from xsdata.formats.dataclass.parsers import DictDecoder
 
 _logger = logging.Logger(__name__)
 
@@ -78,7 +76,7 @@ class FiscalClient(Client):
 
     In fact it is compatible with the xsdata SOAP client for convenience
     and because we already use xsdata for nfelib, but when used with the
-    generic envelope mode it pretty much only use a trivial requests query.
+    generic envelope mode it pretty much only uses a trivial requests query.
 
     Attributes:
         pkcs12_data: bytes of the pkcs12/pfx certificate
@@ -89,7 +87,7 @@ class FiscalClient(Client):
         uf: federal state ibge code
         versao: schema version for the service, like "4.00" for nfe
         service: "nfe"|"cte"|"mdfe"|"bpe"
-        verify_ssl: bool = False  # TODO is it a decent default?
+        verify_ssl: should openssl use verify_ssl?
     """
 
     pkcs12_data: bytes = None
@@ -110,22 +108,21 @@ class FiscalClient(Client):
         pkcs12_password: str,
         fake_certificate: bool = False,
         server: Optional[str] = None,
-        config: Config = None,
-        versao: str = "undef",
         service: str = "nfe",
+        versao: str = "undef",
         verify_ssl: bool = False,
-        transport: Optional[Transport] = None,
-        parser: Optional[XmlParser] = None,
-        serializer: Optional[XmlSerializer] = None,
+        **kwargs: Any,
     ):
-        if config is None:
+        if not kwargs.get("config"):
             config = {
                 "style": "document",
                 "transport": "http://schemas.xmlsoap.org/soap/http",
             }
-        super().__init__(
-            config=config, transport=transport, parser=parser, serializer=serializer
-        )
+
+        # TODO TODO FIXME TODO:
+        # override Config and move params in FiscalConfig!
+
+        super().__init__(config, **kwargs)
         self.ambiente = ambiente
         self.uf = uf
         self.pkcs12_data = pkcs12_data
@@ -138,6 +135,24 @@ class FiscalClient(Client):
             self.server = server
         else:
             self.server = self._get_server(service, uf)
+        retries = Retry(  # retry in case of errors
+            total=RETRIES,
+            backoff_factor=BACKOFF_FACTOR,
+            status_forcelist=RETRY_ERRORS,
+        )
+        self.transport.timeout = TIMEOUT
+
+        self.transport.session.mount(self.server, HTTPAdapter(max_retries=retries))
+        if not self.fake_certificate:
+            # SSL request doesn't work with the fake cert we use in tests
+            self.transport.session.mount(
+                self.server,
+                Pkcs12Adapter(
+                    pkcs12_data=self.pkcs12_data,
+                    pkcs12_password=self.pkcs12_password,
+                ),
+            )
+            self.transport.session.verify = self.verify_ssl
 
     @classmethod
     def _get_server(cls, service: str, uf: str) -> str:
@@ -200,73 +215,25 @@ class FiscalClient(Client):
                 soap_action=None,
             )
 
-        if isinstance(obj, Dict):  # object can be passed as a dict
-            decoder = DictDecoder(context=self.serializer.context)
-            obj = decoder.decode(obj, self.config.input)
-
         if action_class and not isinstance(obj, dict) and not isinstance(obj, Type):
             # will use the action_class envelope
             obj = {"Body": {f"{self.service}DadosMsg": {"content": [obj]}}}
 
         _logger.debug("SOAP REQUEST URL", self.config.location)
-        data = self.prepare_payload(
+        data = self._prepare_fiscal_payload(
             obj, placeholder_exp, placeholder_content, location=location
         )
         _logger.debug("SOAP REQUEST DATA: ", data)
         headers = self.prepare_headers(headers or {})
 
-        self.transport.session.verify = self.verify_ssl
-
-        retries = Retry(  # retry in case of errors
-            total=RETRIES,
-            backoff_factor=BACKOFF_FACTOR,
-            status_forcelist=RETRY_ERRORS,
-        )
-        self.transport.session.mount(self.server, HTTPAdapter(max_retries=retries))
-        if not self.fake_certificate:
-            # SSL request doesn't work with the fake cert we use in tests
-            self.transport.session.mount(
-                self.server,
-                Pkcs12Adapter(
-                    pkcs12_data=self.pkcs12_data,
-                    pkcs12_password=self.pkcs12_password,
-                ),
-            )
-        self.transport.timeout = TIMEOUT
-
         response = self.transport.post(self.config.location, data=data, headers=headers)
         _logger.debug("SOAP RESPONSE DATA:", response)
 
         if not action_class:
-            # generic envelope
-            response = response.decode().replace(
-                '<?xml version="1.0" encoding="utf-8"?>', ""
-            )
-            root = etree.fromstring(response)
-            xml_etree = (
-                root.getchildren()[0].getchildren()[0].getchildren()[0]
-            )  # TODO xpath?
-            xml = ElementTree.tostring(xml_etree).decode()
-            return self.parser.from_string(xml, return_type)
+            return self._generic_response(response, return_type)
+        return self._xsdata_response(response, return_type)
 
-        response = self.parser.from_bytes(response, self.config.output)
-
-        # the challenge with the Fiscal SOAP is the return type
-        # is a wildcard in the WSDL, so here we help xsdata to figure
-        # out which dataclass to use to parse the resultMsg content
-        # based on the XML qname of the element.
-        anyElement = response.body.nfeResultMsg.content[0]  # TODO safe guard
-        anyElement.qname = None
-        anyElement.text = None
-        # TODO deal with children or attributes (and remove their qname and text) ?
-
-        xml = self.serializer.render(
-            obj=anyElement,
-            ns_map={None: f"http://www.portalfiscal.inf.br/{self.service}"},
-        )
-        return self.parser.from_string(xml, return_type)
-
-    def prepare_payload(
+    def _prepare_fiscal_payload(
         self,
         obj: Any,
         placeholder_exp: str = "",
@@ -275,9 +242,10 @@ class FiscalClient(Client):
     ) -> Any:
         """Prepare and serialize payload to be sent.
 
-        Overriden to skip namespaces to please the Fazenda
-        and to be able to insert string placeholders to
-        avoid useless parsing/serialization and signature issues.
+        Differ from xsdata _prepare_payload to skip namespaces
+        to please the Fazenda and to be able to insert string
+        placeholders to avoid useless parsing/serialization and
+        signature issues. Is also able to use a generic envelope.
         """
         if isinstance(obj, Dict):
             # action_class case
@@ -291,6 +259,7 @@ class FiscalClient(Client):
             content = self.serializer.render(
                 obj=obj, ns_map={None: f"http://www.portalfiscal.inf.br/{self.service}"}
             )
+            # TODO: do we want it with or without .asmx extensions?
             action_name = location.split("/")[-1].split(".")[0]
             ns = f"http://www.portalfiscal.inf.br/{self.service}/{self.service}/{action_name}"
             data = f"""
@@ -322,3 +291,35 @@ class FiscalClient(Client):
                 )
 
         return data
+
+    def _generic_response(self, response: str, return_type: Type) -> Any:
+        # response from generic envelope
+        response = response.decode().replace(
+            '<?xml version="1.0" encoding="utf-8"?>', ""
+        )
+        root = etree.fromstring(response)
+        xml_etree = (
+            root.getchildren()[0].getchildren()[0].getchildren()[0]
+        )  # TODO xpath?
+        xml = ElementTree.tostring(xml_etree).decode()
+        return self.parser.from_string(xml, return_type)
+
+    def _xsdata_response(self, response: str, return_type: Type) -> Any:
+        # the challenge with the Fiscal SOAP is the return type
+        # is a wildcard in the WSDL, so here we help xsdata to figure
+        # out which dataclass to use to parse the resultMsg content
+        # based on the XML qname of the element.
+
+        response = self.parser.from_bytes(response, self.config.output)
+        result_msg = getattr(response.body, f"{self.service}ResultMsg")
+        if result_msg:
+            anyElement = result_msg.content[0]
+            anyElement.qname = None
+            anyElement.text = None
+            xml = self.serializer.render(
+                obj=anyElement,
+                ns_map={None: f"http://www.portalfiscal.inf.br/{self.service}"},
+            )
+            return self.parser.from_string(xml, return_type)
+
+        return self.parser.from_string(xml, return_type)
