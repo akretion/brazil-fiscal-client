@@ -1,3 +1,4 @@
+from os import environ
 from unittest import TestCase, mock
 
 from xsdata.formats.dataclass.transports import DefaultTransport
@@ -59,6 +60,114 @@ class FiscalClientTests(TestCase):
 
         result = client.send(
             NfeStatusServico4SoapNfeStatusServicoNf,
+            ConsStatServ(
+                tpAmb="2",
+                cUF="41",
+                xServ="STATUS",
+                versao="4.00",
+            ),
+        )
+
+        self.assertIsInstance(result, RetConsStatServ)
+        self.assertEqual(result.cStat, "107")
+
+    @mock.patch.object(DefaultTransport, "post")
+    def test_send_with_generic_envelope(self, mock_post):
+        mock_post.return_value = response.encode()
+
+        client = FiscalClient(
+            ambiente="2",
+            uf=41,
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            server="http://testurl.com",
+            fake_certificate=True,
+        )
+
+        result = client.send(
+            "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+            ConsStatServ(
+                tpAmb="2",
+                cUF="41",
+                xServ="STATUS",
+                versao="4.00",
+            ),
+        )
+
+        self.assertIsInstance(result, RetConsStatServ)
+        self.assertEqual(result.cStat, "107")
+
+    @mock.patch.object(DefaultTransport, "post")
+    def test_send_with_generic_envelope_action_name(self, mock_post):
+        mock_post.return_value = response.encode()
+
+        client = FiscalClient(
+            ambiente="2",
+            uf=41,
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+            server="https://nfe-homologacao.svrs.rs.gov.br",
+        )
+
+        result = client.send(
+            "NfeStatusServico4.asmx",
+            ConsStatServ(
+                tpAmb="2",
+                cUF="41",
+                xServ="STATUS",
+                versao="4.00",
+            ),
+        )
+
+        self.assertIsInstance(result, RetConsStatServ)
+        self.assertEqual(result.cStat, "107")
+
+    def test_send_with_real_certificate(self):
+        if not environ.get("CERT_FILE"):
+            return
+        with open(environ["CERT_FILE"], "rb") as buffer:
+            pkcs12_data = buffer.read()
+
+        client = FiscalClient(
+            server="https://nfe-homologacao.svrs.rs.gov.br",
+            ambiente="2",
+            uf="41",
+            pkcs12_data=pkcs12_data,
+            pkcs12_password=environ["CERT_PASSWORD"],
+        )
+
+        result = client.send(
+            NfeStatusServico4SoapNfeStatusServicoNf,
+            ConsStatServ(
+                tpAmb="2",
+                cUF="41",
+                xServ="STATUS",
+                versao="4.00",
+            ),
+        )
+
+        self.assertIsInstance(result, RetConsStatServ)
+        self.assertEqual(result.cStat, "107")
+
+    def test_send_with_real_certificate_generic_envelope_action_name(self):
+        if not environ.get("CERT_FILE"):
+            return
+        with open(environ["CERT_FILE"], "rb") as buffer:
+            pkcs12_data = buffer.read()
+
+        client = FiscalClient(
+            server="https://nfe-homologacao.svrs.rs.gov.br",
+            ambiente="2",
+            uf="41",
+            pkcs12_data=pkcs12_data,
+            pkcs12_password=environ["CERT_PASSWORD"],
+        )
+
+        result = client.send(
+            # "NfeStatusServico4.asmx",
+            "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+            # "http://127.0.0.1:4000/ws/NfeStatusServico/NfeStatusServico4.asmx",
             ConsStatServ(
                 tpAmb="2",
                 cUF="41",
