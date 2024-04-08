@@ -9,11 +9,8 @@ from typing import Any, Dict, Optional, Type
 
 from requests.adapters import HTTPAdapter, Retry
 from requests_pkcs12 import Pkcs12Adapter
-from xsdata.formats.dataclass.client import Client, Config
-from xsdata.formats.dataclass.parsers import DictDecoder, XmlParser
-from xsdata.formats.dataclass.serializers import XmlSerializer
-from xsdata.formats.dataclass.serializers.config import SerializerConfig
-from xsdata.formats.dataclass.transports import DefaultTransport, Transport
+from xsdata.formats.dataclass.client import Client, ClientValueError, Config
+from xsdata.formats.dataclass.parsers import DictDecoder
 
 _logger = logging.Logger(__name__)
 
@@ -26,99 +23,96 @@ TIMEOUT = 20.0
 class Tamb(Enum):
     """Tipo Ambiente."""
 
-    VALUE_1 = "1"
-    VALUE_2 = "2"
+    PROD = "1"
+    DEV = "2"
 
 
 class TcodUfIbge(Enum):
     """Tipo Código da UF da tabela do IBGE."""
 
-    VALUE_11 = "11"
-    VALUE_12 = "12"
-    VALUE_13 = "13"
-    VALUE_14 = "14"
-    VALUE_15 = "15"
-    VALUE_16 = "16"
-    VALUE_17 = "17"
-    VALUE_21 = "21"
-    VALUE_22 = "22"
-    VALUE_23 = "23"
-    VALUE_24 = "24"
-    VALUE_25 = "25"
-    VALUE_26 = "26"
-    VALUE_27 = "27"
-    VALUE_28 = "28"
-    VALUE_29 = "29"
-    VALUE_31 = "31"
-    VALUE_32 = "32"
-    VALUE_33 = "33"
-    VALUE_35 = "35"
-    VALUE_41 = "41"
-    VALUE_42 = "42"
-    VALUE_43 = "43"
-    VALUE_50 = "50"
-    VALUE_51 = "51"
-    VALUE_52 = "52"
-    VALUE_53 = "53"
+    AC = "11"  # Acre
+    AL = "12"  # Alagoas
+    AP = "13"  # Amapá
+    AM = "14"  # Amazonas
+    BA = "15"  # Bahia
+    CE = "16"  # Ceará
+    DF = "17"  # Distrito Federal
+    ES = "21"  # Espírito Santo
+    GO = "22"  # Goiás
+    MA = "23"  # Maranhão
+    MT = "24"  # Mato Grosso
+    MS = "25"  # Mato Grosso do Sul
+    MG = "31"  # Minas Gerais
+    PA = "32"  # Pará
+    PB = "33"  # Paraíba
+    PR = "41"  # Paraná
+    PE = "42"  # Pernambuco
+    PI = "43"  # Piauí
+    RJ = "50"  # Rio de Janeiro
+    RN = "51"  # Rio Grande do Norte
+    RS = "52"  # Rio Grande do Sul
+    RO = "53"  # Rondônia
+    RR = "21"  # Roraima
+    SC = "22"  # Santa Catarina
+    SP = "23"  # São Paulo
+    SE = "24"  # Sergipe
+    TO = "25"  # Tocantins
 
 
 class FiscalClient(Client):
-    """A Brazilian fiscal wsdl client."""
+    """A Brazilian fiscal client extending the xsdata SOAP wsdl client.
+
+    It differs a bit from the xsdata client because the SOAP action
+    (action_class or action URL) will not be passed in the constructor
+    but when calling send to post a payload for a specific SOAP action.
+
+    Attributes:
+        pkcs12_data: bytes of the pkcs12/pfx certificate
+        pkcs12_password: password of the certificate
+        fake_certificate: only True when used with pytest
+        ambiente: "1" for production, "2" for tests
+        uf: federal state ibge code
+        service: "nfe"|"cte"|"mdfe"|"bpe"
+        verify_ssl: should openssl use verify_ssl?
+    """
 
     pkcs12_data: bytes = None
     pkcs12_password: str = None
     fake_certificate: bool = False
-    server: str = "undef"
     ambiente: Tamb = None
-    uf: TcodUfIbge = "undef"
-    versao: str = "undef"
+    uf: TcodUfIbge = None
+    versao: str = None
     service: str = "nfe"
-    serializer: XmlSerializer = XmlSerializer(config=SerializerConfig())
-    parser: XmlParser = XmlParser()
-    transport: Transport = DefaultTransport()
     verify_ssl: bool = False  # TODO is it a decent default?
 
     def __init__(
         self,
         ambiente: str,
         uf: TcodUfIbge,
+        versao: str,
         pkcs12_data: bytes,
         pkcs12_password: str,
         fake_certificate: bool = False,
-        server: Optional[str] = None,
-        config: Config = None,
-        versao: str = "undef",
         service: str = "nfe",
         verify_ssl: bool = False,
-        transport: Optional[Transport] = None,
-        parser: Optional[XmlParser] = None,
-        serializer: Optional[XmlSerializer] = None,
+        **kwargs: Any,
     ):
-        if config is None:
-            config = {
-                "style": "document",
-                "transport": "http://schemas.xmlsoap.org/soap/http",
-            }
-        super().__init__(
-            config=config, transport=transport, parser=parser, serializer=serializer
-        )
+        if not kwargs.get("config"):
+            config = {}
+            # creating a Config is useless because it is a frozen dataclass:
+            # see https://github.com/tefra/xsdata/issues/1009
+
+        super().__init__(config, **kwargs)
         self.ambiente = ambiente
         self.uf = uf
+        self.versao = versao
         self.pkcs12_data = pkcs12_data
         self.pkcs12_password = pkcs12_password
         self.fake_certificate = fake_certificate
         self.verify_ssl = verify_ssl
         self.service = service
-        self.versao = versao
-        if server:
-            self.server = server
-        else:
-            self.server = self._get_server(service, uf)
-
-    @classmethod
-    def _get_server(cls, service: str, uf: str) -> str:
-        """Meant to be overriden as URL change with service, uf and ambiente."""
-        return "not implemented here"
+        self.transport.timeout = TIMEOUT
+        self.transport.session.verify = self.verify_ssl
 
     @classmethod
     def _timestamp(self):
@@ -131,65 +125,56 @@ class FiscalClient(Client):
     def send(
         self,
         action_class: Type,
-        obj: Any,
+        location: str,
+        wrapped_obj: Any,
+        placeholder_exp: Optional[str] = None,
+        placeholder_content: Optional[str] = None,
         return_type: Optional[Type] = None,
         headers: Optional[Dict] = None,
-        placeholder_exp: str = "",
-        placeholder_content: str = "",
     ) -> Any:
-        """Build and send a request for the input object."""
-        path = "/".join(["/ws"] + action_class.location.split("/")[-2:])
-        # FIXME some UF may not have /ws and might need a "?wsdl" suffix
-        location = self.server + path
+        """Build and send a request for the input object.
+
+        Args:
+            action_class: Type generated with xsdata for the SOAP wsdl
+            wrapped_obj: The request model instance or a pure dictionary
+            location: the URL for the SOAP action
+            placeholder_content: a string content to be injected in the
+            payload. Used for signed content to avoid signature issues.
+            placeholder_exp: placeholder where to inject placeholder_content
+            return_type: you can specific it to help xsdata wrapping
+            the response into the right class. Usually useless if the
+            proper return type has been imported already.
+            headers: Additional headers to pass to the transport
+
+        Returns:
+            The response model instance.
+        """
+        server = "https://" + location.split("/")[2]
         self.config = Config.from_service(action_class, location=location)
-
-        if isinstance(obj, Dict):  # see superclass
-            decoder = DictDecoder(context=self.serializer.context)
-            obj = decoder.decode(obj, self.config.input)
-
-        if not isinstance(obj, dict) and not isinstance(obj, Type):
-            obj = {"Body": {"nfeDadosMsg": {"content": [obj]}}}
-
-        self.transport.session.verify = self.verify_ssl
 
         retries = Retry(  # retry in case of errors
             total=RETRIES,
             backoff_factor=BACKOFF_FACTOR,
             status_forcelist=RETRY_ERRORS,
         )
-        self.transport.session.mount(self.server, HTTPAdapter(max_retries=retries))
+        self.transport.session.mount(server, HTTPAdapter(max_retries=retries))
+
         if not self.fake_certificate:
             # SSL request doesn't work with the fake cert we use in tests
             self.transport.session.mount(
-                self.server,
+                server,
                 Pkcs12Adapter(
                     pkcs12_data=self.pkcs12_data,
                     pkcs12_password=self.pkcs12_password,
                 ),
             )
-        self.transport.timeout = TIMEOUT
 
-        _logger.debug("SOAP REQUEST URL", self.config.location)
-        data = self.prepare_payload(obj, placeholder_exp, placeholder_content)
-        _logger.debug("SOAP REQUEST DATA: ", data)
+        data = self.prepare_payload(wrapped_obj, placeholder_exp, placeholder_content)
+        _logger.debug(f"FISCAL SOAP REQUEST to {location}:", data)
         headers = self.prepare_headers(headers or {})
-        response = self.transport.post(self.config.location, data=data, headers=headers)
-        response = self.parser.from_bytes(response, self.config.output)
-        _logger.debug("SOAP RESPONSE DATA:", response)
-
-        # the challenge with the Fiscal SOAP is the return type
-        # is a wildcard in the WSDL, so here we help xsdata to figure
-        # out which dataclass to use to parse the resultMsg content
-        # based on the XML qname of the element.
-        anyElement = response.body.nfeResultMsg.content[0]  # TODO safe guard
-        anyElement.qname = None
-        anyElement.text = None
-        # TODO deal with children or attributes (and remove their qname and text) ?
-
-        xml = self.serializer.render(
-            obj=anyElement, ns_map={None: "http://www.portalfiscal.inf.br/nfe"}
-        )
-        return self.parser.from_string(xml, return_type)
+        response = self.transport.post(location, data=data, headers=headers)
+        _logger.debug("FISCAL SOAP RESPONSE:", response)
+        return self.parser.from_bytes(response, action_class.output)
 
     def prepare_payload(
         self,
@@ -199,16 +184,36 @@ class FiscalClient(Client):
     ) -> Any:
         """Prepare and serialize payload to be sent.
 
-        Overriden to skip namespaces to please the Fazenda
-        and to be able to insert string placeholders to
-        avoid useless parsing/serialization and signature issues.
+        It differs from xsdata _prepare_payload: it skips namespaces
+        to please the Fazenda and it allows to insert string
+        placeholders to avoid useless parsing/serialization and
+        signature issues.
+
+        Args:
+            obj: The request model instance or a pure dictionary
+            placeholder_content: a string content to be injected in the
+            payload. Used for signed content to avoid signature issues.
+            placeholder_exp: placeholder where to inject placeholder_content
+
+        Returns:
+            The serialized request body content as string or bytes.
+
+        Raises:
+            ClientValueError: If the config input type doesn't match the given object.
         """
         if isinstance(obj, Dict):
             decoder = DictDecoder(context=self.serializer.context)
             obj = decoder.decode(obj, self.config.input)
 
+        if not isinstance(obj, self.config.input):
+            raise ClientValueError(
+                f"Invalid input service type, "
+                f"expected `{self.config.input.__name__}` "
+                f"got `{type(obj).__name__}`"
+            )
+
         data = self.serializer.render(
-            obj=obj, ns_map={None: "http://www.portalfiscal.inf.br/nfe"}
+            obj=obj, ns_map={None: f"http://www.portalfiscal.inf.br/{self.service}"}
         )
         if placeholder_exp and placeholder_content:
             # used to match "<NFe/>" in the payload for instance
