@@ -3,6 +3,7 @@
 
 import logging
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, Optional, Type
@@ -84,6 +85,7 @@ class FiscalClient(Client):
     versao: str = None
     service: str = "nfe"
     verify_ssl: bool = False  # TODO is it a decent default?
+    messages = []
 
     def __init__(
         self,
@@ -113,6 +115,7 @@ class FiscalClient(Client):
         self.service = service
         self.transport.timeout = TIMEOUT
         self.transport.session.verify = self.verify_ssl
+        self.messages = []
 
     @classmethod
     def _timestamp(self):
@@ -131,6 +134,7 @@ class FiscalClient(Client):
         placeholder_content: Optional[str] = None,
         return_type: Optional[Type] = None,
         headers: Optional[Dict] = None,
+        subclass_message: Optional[Dict] = None,
     ) -> Any:
         """Build and send a request for the input object.
 
@@ -145,6 +149,7 @@ class FiscalClient(Client):
             the response into the right class. Usually useless if the
             proper return type has been imported already.
             headers: Additional headers to pass to the transport
+            subclass_message: a recording message passed from a subclass
 
         Returns:
             The response model instance.
@@ -168,13 +173,22 @@ class FiscalClient(Client):
                     pkcs12_password=self.pkcs12_password,
                 ),
             )
-
+        message = subclass_message or {}
+        if not subclass_message:  # else append will happen in the subclass
+            self.messages.append(message)
+        message["input_url"] = location
+        message["action"] = "GENERIC_SEND"
+        message["input_wrapped_object"] = wrapped_obj
         data = self.prepare_payload(wrapped_obj, placeholder_exp, placeholder_content)
+        message["input_xml"] = data
         _logger.debug(f"FISCAL SOAP REQUEST to {location}:", data)
         headers = self.prepare_headers(headers or {})
         response = self.transport.post(location, data=data, headers=headers)
+        message["output_xml"] = response
         _logger.debug("FISCAL SOAP RESPONSE:", response)
-        return self.parser.from_bytes(response, action_class.output)
+        result = self.parser.from_bytes(response, action_class.output)
+        message["output_wrapped_object"] = result
+        return result
 
     def prepare_payload(
         self,
@@ -229,3 +243,16 @@ class FiscalClient(Client):
                 )
 
         return data
+
+
+@contextmanager
+def soap_recorder(fiscal_client: FiscalClient):
+    """A contextmanager allowing to record all SOAP messages in the block.
+
+    This is specially usefull to record all messages when several SOAP
+    actions are performed inside a single method.
+    For instance authorizing an NFe and then waiting and reading its
+    receipt involves 2 or more SOAP calls.
+    """
+    fiscal_client.messages = []
+    yield fiscal_client.messages
