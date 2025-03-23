@@ -110,6 +110,7 @@ class FiscalClient(Client):
         self.transport.session.verify = self.verify_ssl
 
     def __repr__(self):
+        """Return the instance string representation."""
         return (
             f"<FiscalClient(ambiente={self.ambiente}, uf={self.uf}, "
             f"service={self.service}, versao={self.versao})>"
