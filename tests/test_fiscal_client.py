@@ -1,13 +1,12 @@
 from os import environ
 from unittest import TestCase, mock
 
+from requests.exceptions import RequestException
 from xsdata.formats.dataclass.transports import DefaultTransport
 
 from brazil_fiscal_client.fiscal_client import FiscalClient
 from tests.fixtures.cons_stat_serv_v4_00 import ConsStatServ
-from tests.fixtures.nfestatusservico4 import (
-    NfeStatusServico4SoapNfeStatusServicoNf,
-)
+from tests.fixtures.nfestatusservico4 import NfeStatusServico4SoapNfeStatusServicoNf
 from tests.fixtures.ret_cons_stat_serv_v4_00 import RetConsStatServ
 
 response = """<?xml version="1.0" encoding="utf-8"?>
@@ -118,3 +117,40 @@ class FiscalClientTests(TestCase):
 
         self.assertIsInstance(result.body.nfeResultMsg.content[0], RetConsStatServ)
         self.assertEqual(result.body.nfeResultMsg.content[0].cStat, "107")
+
+    def test_invalid_ambiente(self):
+        with self.assertRaises(ValueError):
+            FiscalClient(
+                ambiente="3",  # Invalid ambiente
+                uf="41",
+                versao="4.00",
+                pkcs12_data=b"fake_cert",
+                pkcs12_password="123456",
+                fake_certificate=True,
+            )
+
+    def test_network_error(self):
+        client = FiscalClient(
+            ambiente="2",
+            uf="41",
+            versao="4.00",
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+        )
+        with self.assertRaises(RequestException):
+            client.send(
+                NfeStatusServico4SoapNfeStatusServicoNf,
+                "https://invalid-url",  # Invalid URL
+                {
+                    "Body": {
+                        "nfeDadosMsg": {
+                            "content": [
+                                ConsStatServ(
+                                    tpAmb="2", cUF="41", xServ="STATUS", versao="4.00"
+                                )
+                            ]
+                        }
+                    }
+                },
+            )

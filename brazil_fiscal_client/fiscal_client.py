@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Dict, Optional, Type
 
 from requests.adapters import HTTPAdapter, Retry
+from requests.exceptions import RequestException
 from requests_pkcs12 import Pkcs12Adapter
 from xsdata.formats.dataclass.client import Client, ClientValueError, Config
 from xsdata.formats.dataclass.parsers import DictDecoder
@@ -67,23 +68,14 @@ class FiscalClient(Client):
     but when calling send to post a payload for a specific SOAP action.
 
     Attributes:
-        pkcs12_data: bytes of the pkcs12/pfx certificate
-        pkcs12_password: password of the certificate
-        fake_certificate: only True when used with pytest
-        ambiente: "1" for production, "2" for tests
-        uf: federal state ibge code
-        service: "nfe"|"cte"|"mdfe"|"bpe"
-        verify_ssl: should openssl use verify_ssl?
+        pkcs12_data: Bytes of the PKCS12/PFX certificate.
+        pkcs12_password: Password of the certificate.
+        fake_certificate: Only True when used with pytest.
+        ambiente: "1" for production, "2" for tests.
+        uf: Federal state IBGE code.
+        service: "nfe"|"cte"|"mdfe"|"bpe".
+        verify_ssl: Should OpenSSL verify SSL certificates?
     """
-
-    pkcs12_data: bytes = None
-    pkcs12_password: str = None
-    fake_certificate: bool = False
-    ambiente: Tamb = None
-    uf: TcodUfIbge = None
-    versao: str = None
-    service: str = "nfe"
-    verify_ssl: bool = False  # TODO is it a decent default?
 
     def __init__(
         self,
@@ -95,14 +87,17 @@ class FiscalClient(Client):
         fake_certificate: bool = False,
         service: str = "nfe",
         verify_ssl: bool = False,
+        timeout: float = TIMEOUT,
         **kwargs: Any,
     ):
-        if not kwargs.get("config"):
-            config = {}
-            # creating a Config is useless because it is a frozen dataclass:
-            # see https://github.com/tefra/xsdata/issues/1009
+        if ambiente not in [t.value for t in Tamb]:
+            raise ValueError(f"Invalid ambiente value: {ambiente}")
+        if uf not in [t.value for t in TcodUfIbge]:
+            raise ValueError(f"Invalid uf value: {uf}")
+        if not versao:
+            raise ValueError("Versao must be provided")
 
-        super().__init__(config, **kwargs)
+        super().__init__(config=kwargs.get("config", {}), **kwargs)
         self.ambiente = ambiente
         self.uf = uf
         self.versao = versao
@@ -111,8 +106,15 @@ class FiscalClient(Client):
         self.fake_certificate = fake_certificate
         self.verify_ssl = verify_ssl
         self.service = service
-        self.transport.timeout = TIMEOUT
+        self.transport.timeout = timeout
         self.transport.session.verify = self.verify_ssl
+
+    def __repr__(self):
+        """Return the instance string representation."""
+        return (
+            f"<FiscalClient(ambiente={self.ambiente}, uf={self.uf}, "
+            f"service={self.service}, versao={self.versao})>"
+        )
 
     @classmethod
     def _timestamp(self):
@@ -170,11 +172,16 @@ class FiscalClient(Client):
             )
 
         data = self.prepare_payload(wrapped_obj, placeholder_exp, placeholder_content)
-        _logger.debug(f"FISCAL SOAP REQUEST to {location}:", data)
         headers = self.prepare_headers(headers or {})
-        response = self.transport.post(location, data=data, headers=headers)
-        _logger.debug("FISCAL SOAP RESPONSE:", response)
-        return self.parser.from_bytes(response, action_class.output)
+        try:
+            _logger.debug(f"Sending SOAP request to {location} with headers: {headers}")
+            _logger.debug(f"SOAP request payload: {data}")
+            response = self.transport.post(location, data=data, headers=headers)
+            _logger.debug(f"SOAP response: {response}")
+            return self.parser.from_bytes(response, action_class.output)
+        except RequestException as e:
+            _logger.error(f"Failed to send SOAP request to {location}: {e}")
+            raise
 
     def prepare_payload(
         self,
