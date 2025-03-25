@@ -1,3 +1,7 @@
+[![Build Status](https://github.com/akretion/brazil-fiscal-client/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/OCA/l10n-brazil/actions/workflows/tests.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/akretion/brazil-fiscal-client/branch/main/graph/badge.svg)](https://codecov.io/gh/akretion/brazil-fiscal-client)
+[![PyPI](https://img.shields.io/pypi/v/brazil-fiscal-client)](https://pypi.org/project/brazil-fiscal-client)
+
 # brazil-fiscal-client
 
 A simple, modern and well tested SOAP client for the Brazilian Fiscal Authority.
