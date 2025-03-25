@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Type
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import RequestException
 from requests_pkcs12 import Pkcs12Adapter
+from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.client import Client, ClientValueError, Config
 from xsdata.formats.dataclass.parsers import DictDecoder
 
@@ -181,6 +182,12 @@ class FiscalClient(Client):
             return self.parser.from_bytes(response, action_class.output)
         except RequestException as e:
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
+            raise
+        except ParserError as e:
+            _logger.error(
+                f"Failed to parse as {action_class.output} SOAP response: {response}"
+            )
+            _logger.error(f"Error: {e}")
             raise
 
     def prepare_payload(
