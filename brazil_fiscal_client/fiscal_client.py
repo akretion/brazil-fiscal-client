@@ -185,7 +185,8 @@ class FiscalClient(Client):
             raise
         except ParserError as e:
             _logger.error(
-                f"Failed to parse as {action_class.output} SOAP response: {response}"
+                f"Failed to parse SOAP response as {action_class.output}\n"
+                f"SOAP response:\n{response.decode()}"
             )
             _logger.error(f"Error: {e}")
             raise
