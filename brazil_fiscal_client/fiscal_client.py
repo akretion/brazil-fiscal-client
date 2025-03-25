@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Type
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import RequestException
 from requests_pkcs12 import Pkcs12Adapter
+from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.client import Client, ClientValueError, Config
 from xsdata.formats.dataclass.parsers import DictDecoder
 
@@ -31,33 +32,33 @@ class Tamb(Enum):
 class TcodUfIbge(Enum):
     """Tipo Código da UF da tabela do IBGE."""
 
-    AC = "11"  # Acre
-    AL = "12"  # Alagoas
-    AP = "13"  # Amapá
-    AM = "14"  # Amazonas
-    BA = "15"  # Bahia
-    CE = "16"  # Ceará
-    DF = "17"  # Distrito Federal
-    ES = "21"  # Espírito Santo
-    GO = "22"  # Goiás
-    MA = "23"  # Maranhão
-    MT = "24"  # Mato Grosso
-    MS = "25"  # Mato Grosso do Sul
+    AC = "12"  # Acre
+    AL = "27"  # Alagoas
+    AP = "16"  # Amapá
+    AM = "13"  # Amazonas
+    BA = "29"  # Bahia
+    CE = "23"  # Ceará
+    DF = "53"  # Distrito Federal
+    ES = "32"  # Espírito Santo
+    GO = "52"  # Goiás
+    MA = "21"  # Maranhão
+    MT = "51"  # Mato Grosso
+    MS = "50"  # Mato Grosso do Sul
     MG = "31"  # Minas Gerais
-    PA = "32"  # Pará
-    PB = "33"  # Paraíba
+    PA = "15"  # Pará
+    PB = "25"  # Paraíba
     PR = "41"  # Paraná
-    PE = "42"  # Pernambuco
-    PI = "43"  # Piauí
-    RJ = "50"  # Rio de Janeiro
-    RN = "51"  # Rio Grande do Norte
-    RS = "52"  # Rio Grande do Sul
-    RO = "53"  # Rondônia
-    RR = "21"  # Roraima
-    SC = "22"  # Santa Catarina
-    SP = "23"  # São Paulo
-    SE = "24"  # Sergipe
-    TO = "25"  # Tocantins
+    PE = "26"  # Pernambuco
+    PI = "22"  # Piauí
+    RJ = "33"  # Rio de Janeiro
+    RN = "24"  # Rio Grande do Norte
+    RS = "43"  # Rio Grande do Sul
+    RO = "11"  # Rondônia
+    RR = "14"  # Roraima
+    SC = "42"  # Santa Catarina
+    SP = "35"  # São Paulo
+    SE = "28"  # Sergipe
+    TO = "17"  # Tocantins
 
 
 class FiscalClient(Client):
@@ -181,6 +182,12 @@ class FiscalClient(Client):
             return self.parser.from_bytes(response, action_class.output)
         except RequestException as e:
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
+            raise
+        except ParserError as e:
+            _logger.error(
+                f"Failed to parse as {action_class.output} SOAP response: {response}"
+            )
+            _logger.error(f"Error: {e}")
             raise
 
     def prepare_payload(
