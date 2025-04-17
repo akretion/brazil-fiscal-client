@@ -32,7 +32,6 @@ from nfelib.nfe.bindings.v4_0.cons_stat_serv_v4_00 import ConsStatServ
 from nfelib.nfe.bindings.v4_0.ret_cons_stat_serv_v4_00 import RetConsStatServ
 
 ambiente = "2"
-uf = "41"
 path_to_your_pkcs12_certificate = "/path_to_your_certificate/pkcs12_certificate.p12"
 certificate_password = "your_certificate_password"
 
@@ -40,7 +39,6 @@ with open(path_to_your_pkcs12_certificate, "rb") as pkcs12_buffer:
     pkcs12_data = pkcs12_buffer.read()
 
 client = FiscalClient(
-    uf=uf,
     ambiente=ambiente,
     versao="4.00",
     pkcs12_data=pkcs12_data,
@@ -56,7 +54,7 @@ result = client.send(
                 "content": [
                     ConsStatServ(
                         tpAmb="2",
-                        cUF="41",
+                        cUF="42",
                         xServ="STATUS",
                         versao="4.00",
                     ),
@@ -67,7 +65,7 @@ result = client.send(
 )
 
 >>> result.body.nfeResultMsg.content[0]
-RetConsStatServ(tpAmb=<Tamb.VALUE_2: '2'>, verAplic='SVRS202401251654', cStat='107', xMotivo='Servico SVC em Operacao', cUF=<TcodUfIbge.VALUE_41: '41'>, dhRecbto='2024-04-01T16:18:03-03:00', tMed='1', dhRetorno=None, xObs=None, versao='4.00')
+RetConsStatServ(tpAmb=<Tamb.VALUE_2: '2'>, verAplic='SVRS202401251654', cStat='107', xMotivo='Servico SVC em Operacao', cUF=<TcodUfIbge.VALUE_42: '42'>, dhRecbto='2024-04-01T16:18:03-03:00', tMed='1', dhRetorno=None, xObs=None, versao='4.00')
 >>> result.body.nfeResultMsg.content[0].cStat
 '107'
 ```
