@@ -1,13 +1,16 @@
 from os import environ
 from unittest import TestCase, mock
 
+from nfelib.nfe.bindings.v4_0.cons_stat_serv_v4_00 import ConsStatServ
+from nfelib.nfe.bindings.v4_0.leiaute_cons_stat_serv_v4_00 import TconsStatServXServ
+from nfelib.nfe.bindings.v4_0.leiaute_nfe_v4_00 import Tamb as NFeTamb
+from nfelib.nfe.bindings.v4_0.leiaute_nfe_v4_00 import TcodUfIbge as NFeTcodUfIbge
+from nfelib.nfe.bindings.v4_0.ret_cons_stat_serv_v4_00 import RetConsStatServ
 from requests.exceptions import RequestException
 from xsdata.formats.dataclass.transports import DefaultTransport
 
-from brazil_fiscal_client.fiscal_client import FiscalClient
-from tests.fixtures.cons_stat_serv_v4_00 import ConsStatServ
+from brazil_fiscal_client.fiscal_client import FiscalClient, Tamb, TcodUfIbge
 from tests.fixtures.nfestatusservico4 import NfeStatusServico4SoapNfeStatusServicoNf
-from tests.fixtures.ret_cons_stat_serv_v4_00 import RetConsStatServ
 
 response = """<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope
@@ -21,7 +24,7 @@ response = """<?xml version="1.0" encoding="utf-8"?>
                 <verAplic>SVRS202401251654</verAplic>
                 <cStat>107</cStat>
                 <xMotivo>Servico SVC em Operacao</xMotivo>
-                <cUF>41</cUF>
+                <cUF>42</cUF>
                 <dhRecbto>2024-03-31T00:19:52-03:00</dhRecbto><tMed>1</tMed>
            </retConsStatServ>
         </nfeResultMsg>
@@ -33,14 +36,15 @@ response = """<?xml version="1.0" encoding="utf-8"?>
 class FiscalClientTests(TestCase):
     def test__init__(self):
         client = FiscalClient(
-            ambiente="2",
-            uf="41",
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
             versao="4.00",
             pkcs12_data=b"fake_cert",
             pkcs12_password="123456",
             fake_certificate=True,
         )
-        self.assertEqual(client.uf, "41")
+        self.assertEqual(client.uf, "42")
+        self.assertEqual(client.ambiente, "2")
         self.assertEqual(client.pkcs12_data, b"fake_cert")
         self.assertEqual(client.pkcs12_password, "123456")
         self.assertIs(client.parser.context, client.serializer.context)
@@ -50,8 +54,8 @@ class FiscalClientTests(TestCase):
         mock_post.return_value = response.encode()
 
         client = FiscalClient(
-            ambiente="2",
-            uf="41",
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
             versao="4.00",
             pkcs12_data=b"fake_cert",
             pkcs12_password="123456",
@@ -67,9 +71,9 @@ class FiscalClientTests(TestCase):
                     "nfeDadosMsg": {
                         "content": [
                             ConsStatServ(
-                                tpAmb="2",
-                                cUF="41",
-                                xServ="STATUS",
+                                tpAmb=NFeTamb.VALUE_2,
+                                cUF=NFeTcodUfIbge.VALUE_42,
+                                xServ=TconsStatServXServ.STATUS,
                                 versao="4.00",
                             ),
                         ]
@@ -88,8 +92,8 @@ class FiscalClientTests(TestCase):
             pkcs12_data = buffer.read()
 
         client = FiscalClient(
-            ambiente="2",
-            uf="41",
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
             versao="4.00",
             pkcs12_data=pkcs12_data,
             pkcs12_password=environ["CERT_PASSWORD"],
@@ -104,9 +108,9 @@ class FiscalClientTests(TestCase):
                     "nfeDadosMsg": {
                         "content": [
                             ConsStatServ(
-                                tpAmb="2",
-                                cUF="41",
-                                xServ="STATUS",
+                                tpAmb=NFeTamb.VALUE_2,
+                                cUF=NFeTcodUfIbge.VALUE_42,
+                                xServ=TconsStatServXServ.STATUS,
                                 versao="4.00",
                             ),
                         ]
@@ -122,7 +126,7 @@ class FiscalClientTests(TestCase):
         with self.assertRaises(ValueError):
             FiscalClient(
                 ambiente="3",  # Invalid ambiente
-                uf="41",
+                uf="42",
                 versao="4.00",
                 pkcs12_data=b"fake_cert",
                 pkcs12_password="123456",
@@ -131,8 +135,8 @@ class FiscalClientTests(TestCase):
 
     def test_network_error(self):
         client = FiscalClient(
-            ambiente="2",
-            uf="41",
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
             versao="4.00",
             pkcs12_data=b"fake_cert",
             pkcs12_password="123456",
@@ -147,7 +151,10 @@ class FiscalClientTests(TestCase):
                         "nfeDadosMsg": {
                             "content": [
                                 ConsStatServ(
-                                    tpAmb="2", cUF="41", xServ="STATUS", versao="4.00"
+                                    tpAmb=NFeTamb.VALUE_2,
+                                    cUF=NFeTcodUfIbge.VALUE_42,
+                                    xServ=TconsStatServXServ.STATUS,
+                                    versao="4.00",
                                 )
                             ]
                         }
