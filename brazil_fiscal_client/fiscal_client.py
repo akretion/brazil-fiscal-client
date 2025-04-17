@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, Optional, Type
+from typing import Any, Optional
 
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import RequestException
@@ -71,7 +71,7 @@ class FiscalClient(Client):
     Attributes:
         pkcs12_data: Bytes of the PKCS12/PFX certificate.
         pkcs12_password: Password of the certificate.
-        fake_certificate: Only True when used with pytest.
+        fake_certificate: True if you use a fake certificate (for tests).
         ambiente: "1" for production, "2" for tests.
         uf: Federal state IBGE code.
         service: "nfe"|"cte"|"mdfe"|"bpe".
@@ -80,35 +80,41 @@ class FiscalClient(Client):
 
     def __init__(
         self,
-        ambiente: str,
-        uf: TcodUfIbge,
+        ambiente: str | Tamb,
         versao: str,
         pkcs12_data: bytes,
         pkcs12_password: str,
-        fake_certificate: bool = False,
-        service: str = "nfe",
-        verify_ssl: bool = False,
-        timeout: float = TIMEOUT,
+        uf: Optional[str | TcodUfIbge] = None,
+        service: Optional[str] = "nfe",
+        verify_ssl: Optional[bool] = False,
+        timeout: Optional[float] = TIMEOUT,
+        fake_certificate: Optional[bool] = False,
         **kwargs: Any,
     ):
-        if ambiente not in [t.value for t in Tamb]:
-            raise ValueError(f"Invalid ambiente value: {ambiente}")
-        if uf not in [t.value for t in TcodUfIbge]:
-            raise ValueError(f"Invalid uf value: {uf}")
-        if not versao:
-            raise ValueError("Versao must be provided")
+        if isinstance(ambiente, str):
+            if ambiente not in [t.value for t in Tamb]:
+                raise ValueError(
+                    f"Invalid ambiente value: {ambiente}, should be '1' or 2'"
+                )
+            self.ambiente = ambiente
+        else:
+            self.ambiente = ambiente.value
+        if isinstance(uf, str):
+            if uf not in [t.value for t in TcodUfIbge]:
+                raise ValueError(f"Invalid uf value: {uf}")
+            self.uf = uf
+        elif uf:
+            self.uf = uf.value
 
         super().__init__(config=kwargs.get("config", {}), **kwargs)
-        self.ambiente = ambiente
-        self.uf = uf
         self.versao = versao
         self.pkcs12_data = pkcs12_data
         self.pkcs12_password = pkcs12_password
-        self.fake_certificate = fake_certificate
         self.verify_ssl = verify_ssl
         self.service = service
         self.transport.timeout = timeout
         self.transport.session.verify = self.verify_ssl
+        self.fake_certificate = fake_certificate
 
     def __repr__(self):
         """Return the instance string representation."""
@@ -118,7 +124,7 @@ class FiscalClient(Client):
         )
 
     @classmethod
-    def _timestamp(self):
+    def _timestamp(cls):
         FORMAT = "%Y-%m-%dT%H:%M:%S"
         return (
             datetime.strftime(datetime.now(tz=timezone(timedelta(hours=-3))), FORMAT)
@@ -127,18 +133,17 @@ class FiscalClient(Client):
 
     def send(
         self,
-        action_class: Type,
+        action_class: Any,
         location: str,
         wrapped_obj: Any,
         placeholder_exp: Optional[str] = None,
         placeholder_content: Optional[str] = None,
-        return_type: Optional[Type] = None,
-        headers: Optional[Dict] = None,
+        headers: Optional[dict] = None,
     ) -> Any:
         """Build and send a request for the input object.
 
         Args:
-            action_class: Type generated with xsdata for the SOAP wsdl
+            action_class: type generated with xsdata for the SOAP wsdl
             wrapped_obj: The request model instance or a pure dictionary
             location: the URL for the SOAP action
             placeholder_content: a string content to be injected in the
@@ -161,9 +166,7 @@ class FiscalClient(Client):
             status_forcelist=RETRY_ERRORS,
         )
         self.transport.session.mount(server, HTTPAdapter(max_retries=retries))
-
         if not self.fake_certificate:
-            # SSL request doesn't work with the fake cert we use in tests
             self.transport.session.mount(
                 server,
                 Pkcs12Adapter(
@@ -194,8 +197,8 @@ class FiscalClient(Client):
     def prepare_payload(
         self,
         obj: Any,
-        placeholder_exp: str = "",
-        placeholder_content: str = "",
+        placeholder_exp: Optional[str] = "",
+        placeholder_content: Optional[str] = "",
     ) -> Any:
         """Prepare and serialize payload to be sent.
 
@@ -216,7 +219,7 @@ class FiscalClient(Client):
         Raises:
             ClientValueError: If the config input type doesn't match the given object.
         """
-        if isinstance(obj, Dict):
+        if isinstance(obj, dict):
             decoder = DictDecoder(context=self.serializer.context)
             obj = decoder.decode(obj, self.config.input)
 
