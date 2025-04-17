@@ -1,11 +1,13 @@
 # Copyright (c) 2024-TODAY Akretion - Raphaël Valyi <raphael.valyi@akretion.com>
 # MIT License
 
+from __future__ import annotations  # Python 3.8 compat
+
 import logging
 import re
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import RequestException
@@ -84,11 +86,11 @@ class FiscalClient(Client):
         versao: str,
         pkcs12_data: bytes,
         pkcs12_password: str,
-        uf: Optional[str | TcodUfIbge] = None,
-        service: Optional[str] = "nfe",
-        verify_ssl: Optional[bool] = False,
-        timeout: Optional[float] = TIMEOUT,
-        fake_certificate: Optional[bool] = False,
+        uf: str | TcodUfIbge | None = None,
+        service: str = "nfe",
+        verify_ssl: bool = False,
+        timeout: float = TIMEOUT,
+        fake_certificate: bool = False,
         **kwargs: Any,
     ):
         if isinstance(ambiente, str):
@@ -136,9 +138,9 @@ class FiscalClient(Client):
         action_class: Any,
         location: str,
         wrapped_obj: Any,
-        placeholder_exp: Optional[str] = None,
-        placeholder_content: Optional[str] = None,
-        headers: Optional[dict] = None,
+        placeholder_exp: str = "",
+        placeholder_content: str = "",
+        headers: dict | None = None,
     ) -> Any:
         """Build and send a request for the input object.
 
@@ -197,8 +199,8 @@ class FiscalClient(Client):
     def prepare_payload(
         self,
         obj: Any,
-        placeholder_exp: Optional[str] = "",
-        placeholder_content: Optional[str] = "",
+        placeholder_exp: str = "",
+        placeholder_content: str = "",
     ) -> Any:
         """Prepare and serialize payload to be sent.
 
