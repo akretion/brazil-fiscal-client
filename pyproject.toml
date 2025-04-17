@@ -49,6 +49,7 @@ test = [
     "pre-commit",
     "pytest",
     "pytest-cov",
+    "nfelib",
 ]
 
 [project.scripts]
