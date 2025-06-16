@@ -1,4 +1,4 @@
-[![Build Status](https://github.com/brazil-fiscal-client/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/OCA/brazil-fiscal-client/workflows/test.yml?query=branch%3Amain)
+[![Build Status](https://github.com/brazil-fiscal-client/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/akretion/brazil-fiscal-client/workflows/tests.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/gh/akretion/brazil-fiscal-client/graph/badge.svg?token=qOwFJXaJJP)](https://codecov.io/gh/akretion/brazil-fiscal-client)
 [![PyPI](https://img.shields.io/pypi/v/brazil-fiscal-client)](https://pypi.org/project/brazil-fiscal-client)
 
