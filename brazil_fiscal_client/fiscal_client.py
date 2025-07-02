@@ -63,6 +63,10 @@ class TcodUfIbge(Enum):
     TO = "17"  # Tocantins
 
 
+SOAP11_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
+SOAP12_ENV_NS = "http://www.w3.org/2003/05/soap-envelope"
+
+
 class FiscalClient(Client):
     """A Brazilian fiscal client extending the xsdata SOAP wsdl client.
 
@@ -91,6 +95,7 @@ class FiscalClient(Client):
         verify_ssl: bool = False,
         timeout: float = TIMEOUT,
         fake_certificate: bool = False,
+        soap12_envelope: bool = False,
         **kwargs: Any,
     ):
         if isinstance(ambiente, str):
@@ -117,6 +122,7 @@ class FiscalClient(Client):
         self.transport.timeout = timeout
         self.transport.session.verify = self.verify_ssl
         self.fake_certificate = fake_certificate
+        self.soap12_envelope = soap12_envelope
 
     def __repr__(self):
         """Return the instance string representation."""
@@ -141,20 +147,19 @@ class FiscalClient(Client):
         placeholder_exp: str = "",
         placeholder_content: str = "",
         headers: dict | None = None,
+        raise_on_soap_mismatch: bool = False,
     ) -> Any:
         """Build and send a request for the input object.
 
         Args:
             action_class: type generated with xsdata for the SOAP wsdl
-            wrapped_obj: The request model instance or a pure dictionary
             location: the URL for the SOAP action
+            wrapped_obj: The request model instance or a pure dictionary
+            placeholder_exp: placeholder where to inject placeholder_content
             placeholder_content: a string content to be injected in the
             payload. Used for signed content to avoid signature issues.
-            placeholder_exp: placeholder where to inject placeholder_content
-            return_type: you can specific it to help xsdata wrapping
-            the response into the right class. Usually useless if the
-            proper return type has been imported already.
             headers: Additional headers to pass to the transport
+            raise_on_soap_mismatch: Raise an exception if SOAP version mismatches
 
         Returns:
             The response model instance.
@@ -176,22 +181,42 @@ class FiscalClient(Client):
                     pkcs12_password=self.pkcs12_password,
                 ),
             )
-
-        data = self.prepare_payload(wrapped_obj, placeholder_exp, placeholder_content)
+        data = self.prepare_payload(
+            wrapped_obj,
+            placeholder_exp,
+            placeholder_content,
+        )
         headers = self.prepare_headers(headers or {})
         try:
             _logger.debug(f"Sending SOAP request to {location} with headers: {headers}")
             _logger.debug(f"SOAP request payload: {data}")
-            response = self.transport.post(location, data=data, headers=headers)
+            response = self.transport.post(
+                location, data=data, headers=headers
+            ).decode()
             _logger.debug(f"SOAP response: {response}")
-            return self.parser.from_bytes(response, action_class.output)
+
+            # Check if the response uses the SOAP 1.2 namespace and replace it
+            # example NFe with Parana (UF 41) server
+            # tests/nfe/test_client.py::SoapTest::test_0_status
+            if self.soap12_envelope or (
+                not raise_on_soap_mismatch
+                and SOAP12_ENV_NS in response
+                and SOAP11_ENV_NS not in response
+            ):
+                _logger.warning(
+                    f"Detected SOAP 1.2 namespace in response from {location}. "
+                    "Attempting to replace with SOAP 1.1 for parsing."
+                )
+                response = response.replace(SOAP12_ENV_NS, SOAP11_ENV_NS)
+
+            return self.parser.from_string(response, action_class.output)
         except RequestException as e:
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
             raise
         except ParserError as e:
             _logger.error(
                 f"Failed to parse SOAP response as {action_class.output}\n"
-                f"SOAP response:\n{response.decode()}"
+                f"SOAP response:\n{response}"
             )
             _logger.error(f"Error: {e}")
             raise
@@ -211,9 +236,9 @@ class FiscalClient(Client):
 
         Args:
             obj: The request model instance or a pure dictionary
+            placeholder_exp: placeholder where to inject placeholder_content
             placeholder_content: a string content to be injected in the
             payload. Used for signed content to avoid signature issues.
-            placeholder_exp: placeholder where to inject placeholder_content
 
         Returns:
             The serialized request body content as string or bytes.
@@ -235,6 +260,12 @@ class FiscalClient(Client):
         data = self.serializer.render(
             obj=obj, ns_map={None: f"http://www.portalfiscal.inf.br/{self.service}"}
         )
+        if self.soap12_envelope:
+            data = data.replace(
+                f'xmlns:soapenv="{SOAP11_ENV_NS}"',
+                f'xmlns:soapenv="{SOAP12_ENV_NS}"',
+            )
+
         if placeholder_exp and placeholder_content:
             # used to match "<NFe/>" in the payload for instance
             # this allows injecting the signed XML in the payload without
