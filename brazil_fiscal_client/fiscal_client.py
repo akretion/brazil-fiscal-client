@@ -5,6 +5,7 @@ from __future__ import annotations  # Python 3.8 compat
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
@@ -67,6 +68,23 @@ SOAP11_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 SOAP12_ENV_NS = "http://www.w3.org/2003/05/soap-envelope"
 
 
+@dataclass()
+class WrappedHTTPResponse:
+    """Wrapper to better simulate the erpbrasil.edoc legacy API."""
+
+    content: bytes
+
+
+@dataclass()
+class WrappedResponse:
+    """Wrapper to better simulate the erpbrasil.edoc legacy API."""
+
+    envio_raiz: Any
+    envio_xml: bytes
+    resposta: Any
+    retorno: WrappedHTTPResponse
+
+
 class FiscalClient(Client):
     """A Brazilian fiscal client extending the xsdata SOAP wsdl client.
 
@@ -96,6 +114,7 @@ class FiscalClient(Client):
         timeout: float = TIMEOUT,
         fake_certificate: bool = False,
         soap12_envelope: bool = False,
+        wrap_response: bool = False,
         **kwargs: Any,
     ):
         if isinstance(ambiente, str):
@@ -123,6 +142,7 @@ class FiscalClient(Client):
         self.transport.session.verify = self.verify_ssl
         self.fake_certificate = fake_certificate
         self.soap12_envelope = soap12_envelope
+        self.wrap_response = wrap_response
 
     def __repr__(self):
         """Return the instance string representation."""
@@ -198,6 +218,7 @@ class FiscalClient(Client):
             # Check if the response uses the SOAP 1.2 namespace and replace it
             # example NFe with Parana (UF 41) server
             # tests/nfe/test_client.py::SoapTest::test_0_status
+            original_response = response
             if self.soap12_envelope or (
                 not raise_on_soap_mismatch
                 and SOAP12_ENV_NS in response
@@ -209,7 +230,16 @@ class FiscalClient(Client):
                 )
                 response = response.replace(SOAP12_ENV_NS, SOAP11_ENV_NS)
 
-            return self.parser.from_string(response, action_class.output)
+            res = self.parser.from_string(response, action_class.output)
+            if not self.wrap_response:
+                return res
+
+            return WrappedResponse(
+                envio_raiz=placeholder_content,
+                envio_xml=data.encode(),
+                resposta=res,
+                retorno=WrappedHTTPResponse(content=original_response.encode()),
+            )
         except RequestException as e:
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
             raise
