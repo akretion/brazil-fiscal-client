@@ -62,6 +62,7 @@ class TcodUfIbge(Enum):
     SP = "35"  # São Paulo
     SE = "28"  # Sergipe
     TO = "17"  # Tocantins
+    AN = "91"  # Ambiente Nacional
 
 
 SOAP11_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
@@ -72,17 +73,19 @@ SOAP12_ENV_NS = "http://www.w3.org/2003/05/soap-envelope"
 class WrappedHTTPResponse:
     """Wrapper to better simulate the erpbrasil.edoc legacy API."""
 
-    content: bytes
+    content: bytes  # TODO str
+    status_code: int
 
 
 @dataclass()
 class WrappedResponse:
     """Wrapper to better simulate the erpbrasil.edoc legacy API."""
 
-    envio_raiz: Any
-    envio_xml: bytes
-    resposta: Any
-    retorno: WrappedHTTPResponse
+    webservice: str
+    envio_raiz: Any  # TODO make it an alias of request_obj
+    envio_xml: bytes  # TODO make it an alias of request_xml + str
+    resposta: Any  # TODO make it an alias of response obj
+    retorno: WrappedHTTPResponse  # TODO make it an alias of response
 
 
 class FiscalClient(Client):
@@ -115,6 +118,7 @@ class FiscalClient(Client):
         fake_certificate: bool = False,
         soap12_envelope: bool = False,
         wrap_response: bool = False,
+        contingencia: bool = False,
         **kwargs: Any,
     ):
         if isinstance(ambiente, str):
@@ -143,6 +147,7 @@ class FiscalClient(Client):
         self.fake_certificate = fake_certificate
         self.soap12_envelope = soap12_envelope
         self.wrap_response = wrap_response
+        self.contingencia = contingencia
 
     def __repr__(self):
         """Return the instance string representation."""
@@ -210,15 +215,24 @@ class FiscalClient(Client):
         try:
             _logger.debug(f"Sending SOAP request to {location} with headers: {headers}")
             _logger.debug(f"SOAP request payload: {data}")
-            response = self.transport.post(
+            original_response = self.transport.post(
                 location, data=data, headers=headers
-            ).decode()
+            )
+            response = original_response.decode()
             _logger.debug(f"SOAP response: {response}")
+
+            if (
+                "nfeRecepcaoEventoNFResult" in response
+            ):  # TODO can this not be in mde.py?
+                _logger.warning(
+                    "Detected 'nfeRecepcaoEventoNFResult' in response. "
+                    "Replacing with 'nfeResultMsg' for parsing compatibility."
+                )
+                response = response.replace("nfeRecepcaoEventoNFResult", "nfeResultMsg")
 
             # Check if the response uses the SOAP 1.2 namespace and replace it
             # example NFe with Parana (UF 41) server
             # tests/nfe/test_client.py::SoapTest::test_0_status
-            original_response = response
             if self.soap12_envelope or (
                 not raise_on_soap_mismatch
                 and SOAP12_ENV_NS in response
@@ -235,10 +249,11 @@ class FiscalClient(Client):
                 return res
 
             return WrappedResponse(
+                webservice=action_class.soapAction.split("/")[-1],
                 envio_raiz=placeholder_content,
                 envio_xml=data.encode(),
                 resposta=res,
-                retorno=WrappedHTTPResponse(content=original_response.encode()),
+                retorno=WrappedHTTPResponse(content=original_response, status_code=200),
             )
         except RequestException as e:
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
