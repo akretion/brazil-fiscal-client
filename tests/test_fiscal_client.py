@@ -10,7 +10,12 @@ from requests.exceptions import RequestException
 from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.transports import DefaultTransport
 
-from brazil_fiscal_client.fiscal_client import FiscalClient, Tamb, TcodUfIbge
+from brazil_fiscal_client.fiscal_client import (
+    ClientValueError,
+    FiscalClient,
+    Tamb,
+    TcodUfIbge,
+)
 from tests.fixtures.nfestatusservico4 import NfeStatusServico4SoapNfeStatusServicoNf
 
 response = """<?xml version="1.0" encoding="utf-8"?>
@@ -341,3 +346,46 @@ class FiscalClientTests(TestCase):
         self.assertIn(
             SOAP12_ENV_NS, str(cm.exception)
         )  # Check if error mentions the unexpected NS
+
+    @mock.patch("brazil_fiscal_client.fiscal_client.XSDATA_AVAILABLE", False)
+    @mock.patch("requests.Session.post")
+    def test_send_without_xsdata_returns_raw_xml(self, mock_post):
+        mock_post.return_value = mock.Mock(
+            content=response.encode(),
+            raise_for_status=mock.Mock(),
+        )
+
+        client = FiscalClient(
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
+            versao="4.00",
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+            service="nfe",
+        )
+
+        raw_payload = "<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/'></soapenv:Envelope>"
+        result = client.send(
+            action_class=None,
+            location="https://nfe-homologacao.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+            wrapped_obj=raw_payload,
+        )
+
+        self.assertIn("<soap:Envelope", result)
+        self.assertTrue(mock_post.called)
+
+    @mock.patch("brazil_fiscal_client.fiscal_client.XSDATA_AVAILABLE", False)
+    def test_prepare_payload_without_xsdata_requires_raw_xml(self):
+        client = FiscalClient(
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
+            versao="4.00",
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+            service="nfe",
+        )
+
+        with self.assertRaisesRegex(ClientValueError, "xsdata is not installed"):
+            client.prepare_payload({"Body": {}})

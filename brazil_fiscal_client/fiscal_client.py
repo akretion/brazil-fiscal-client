@@ -8,14 +8,42 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from importlib import import_module
+from importlib.util import find_spec
+from typing import TYPE_CHECKING, Any
 
+import requests
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import RequestException
 from requests_pkcs12 import Pkcs12Adapter
-from xsdata.exceptions import ParserError
-from xsdata.formats.dataclass.client import Client, ClientValueError, Config
-from xsdata.formats.dataclass.parsers import DictDecoder
+
+XSDATA_AVAILABLE = find_spec("xsdata") is not None
+
+if TYPE_CHECKING:
+    # Import types for type checking only
+    from xsdata.exceptions import ParserError
+    from xsdata.formats.dataclass.client import Client, ClientValueError, Config
+    from xsdata.formats.dataclass.parsers import DictDecoder
+elif XSDATA_AVAILABLE:
+    _xsdata_exceptions = import_module("xsdata.exceptions")
+    ParserError = _xsdata_exceptions.ParserError
+    _client_mod = import_module("xsdata.formats.dataclass.client")
+    _parser_mod = import_module("xsdata.formats.dataclass.parsers")
+    Client = _client_mod.Client
+    ClientValueError = _client_mod.ClientValueError
+    Config = _client_mod.Config
+    DictDecoder = _parser_mod.DictDecoder
+else:
+
+    class ParserError(Exception):  # type: ignore[no-redef]
+        """Raised when parsing a SOAP response fails."""
+
+    class ClientValueError(ValueError):  # type: ignore[no-redef]
+        """Raised when a payload does not match client expectations."""
+
+    class Client:  # type: ignore[no-redef]
+        """Fallback base class used when xsdata isn't installed."""
+
 
 _logger = logging.Logger(__name__)
 
@@ -136,14 +164,22 @@ class FiscalClient(Client):
         elif uf:
             self.uf = uf.value
 
-        super().__init__(config=kwargs.get("config", {}), **kwargs)
+        self._xsdata_available = XSDATA_AVAILABLE
+        if self._xsdata_available:
+            super().__init__(config=kwargs.get("config", {}), **kwargs)
+        else:
+            self.session = requests.Session()
         self.versao = versao
         self.pkcs12_data = pkcs12_data
         self.pkcs12_password = pkcs12_password
         self.verify_ssl = verify_ssl
         self.service = service
-        self.transport.timeout = timeout
-        self.transport.session.verify = self.verify_ssl
+        if self._xsdata_available:
+            self.transport.timeout = timeout
+            self.transport.session.verify = self.verify_ssl
+        else:
+            self.timeout = timeout
+            self.session.verify = self.verify_ssl
         self.fake_certificate = fake_certificate
         self.soap12_envelope = soap12_envelope
         self.wrap_response = wrap_response
@@ -190,16 +226,17 @@ class FiscalClient(Client):
             The response model instance.
         """
         server = "https://" + location.split("/")[2]
-        self.config = Config.from_service(action_class, location=location)
+        if self._xsdata_available:
+            self.config = Config.from_service(action_class, location=location)
 
         retries = Retry(  # retry in case of errors
             total=RETRIES,
             backoff_factor=BACKOFF_FACTOR,
             status_forcelist=RETRY_ERRORS,
         )
-        self.transport.session.mount(server, HTTPAdapter(max_retries=retries))
+        self._session.mount(server, HTTPAdapter(max_retries=retries))
         if not self.fake_certificate:
-            self.transport.session.mount(
+            self._session.mount(
                 server,
                 Pkcs12Adapter(
                     pkcs12_data=self.pkcs12_data,
@@ -215,9 +252,7 @@ class FiscalClient(Client):
         try:
             _logger.debug(f"Sending SOAP request to {location} with headers: {headers}")
             _logger.debug(f"SOAP request payload: {data}")
-            original_response = self.transport.post(
-                location, data=data, headers=headers
-            )
+            original_response = self._post(location, data=data, headers=headers)
             response = original_response.decode()
             _logger.debug(f"SOAP response: {response}")
 
@@ -244,12 +279,15 @@ class FiscalClient(Client):
                 )
                 response = response.replace(SOAP12_ENV_NS, SOAP11_ENV_NS)
 
-            res = self.parser.from_string(response, action_class.output)
+            if self._xsdata_available:
+                res = self.parser.from_string(response, action_class.output)
+            else:
+                res = response
             if not self.wrap_response:
                 return res
 
             return WrappedResponse(
-                webservice=action_class.soapAction.split("/")[-1],
+                webservice=self._webservice_name(action_class),
                 envio_raiz=placeholder_content,
                 envio_xml=data.encode(),
                 resposta=res,
@@ -259,12 +297,50 @@ class FiscalClient(Client):
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
             raise
         except ParserError as e:
+            if not self._xsdata_available:
+                raise
             _logger.error(
                 f"Failed to parse SOAP response as {action_class.output}\n"
                 f"SOAP response:\n{response}"
             )
             _logger.error(f"Error: {e}")
             raise
+
+    def prepare_headers(self, headers: dict) -> dict:
+        """Prepare request headers.
+
+        Keep xsdata behavior when available and default to plain HTTP headers
+        when running in lightweight mode without xsdata.
+        """
+        if self._xsdata_available:
+            return super().prepare_headers(headers)
+
+        return {
+            "Content-Type": "text/xml; charset=utf-8",
+            **headers,
+        }
+
+    @property
+    def _session(self):
+        return self.transport.session if self._xsdata_available else self.session
+
+    def _post(self, location: str, data: str, headers: dict) -> bytes:
+        if self._xsdata_available:
+            return self.transport.post(location, data=data, headers=headers)
+
+        response = self.session.post(
+            location,
+            data=data,
+            headers=headers,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.content
+
+    @staticmethod
+    def _webservice_name(action_class: Any) -> str:
+        soap_action = getattr(action_class, "soapAction", "")
+        return soap_action.split("/")[-1] if soap_action else "unknown"
 
     def prepare_payload(
         self,
@@ -291,6 +367,18 @@ class FiscalClient(Client):
         Raises:
             ClientValueError: If the config input type doesn't match the given object.
         """
+        if not self._xsdata_available:
+            if isinstance(obj, bytes):
+                return obj.decode()
+            if isinstance(obj, str):
+                return obj
+            if isinstance(obj, dict) and "raw_xml" in obj:
+                return str(obj["raw_xml"])
+            raise ClientValueError(
+                "xsdata is not installed: pass the SOAP payload as `str`, `bytes` "
+                "or a dict containing a `raw_xml` key."
+            )
+
         if isinstance(obj, dict):
             decoder = DictDecoder(context=self.serializer.context)
             obj = decoder.decode(obj, self.config.input)
