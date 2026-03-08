@@ -29,7 +29,6 @@ classifiers = [
 keywords = ["soap", "wsdl", "nfe", "fazenda", "binding", "nfelib", "odoo"]
 requires-python = ">=3.8"
 dependencies = [
-    "xsdata",
     "requests",
     "requests-pkcs12"
 ]
@@ -45,6 +44,9 @@ Source = "https://github.com/akretion/brazil-fiscal-client"
 Documentation = "https://github.com/akretion/brazil-fiscal-client"
 
 [project.optional-dependencies]
+xsdata = [
+    "xsdata",
+]
 test = [
     "pre-commit",
     "pytest",
@@ -53,8 +55,6 @@ test = [
     "lxml",
 ]
 
-[project.scripts]
-xsdata = "xsdata.__main__:main"
 
 [tool.setuptools]
 include-package-data = true
