@@ -188,6 +188,51 @@ class FiscalClientTests(TestCase):
                 },
             )
 
+
+    def test_wrapped_response_aliases(self):
+        client = FiscalClient(
+            ambiente=Tamb.DEV,
+            versao="4.00",
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+            wrap_response=True,
+        )
+
+        with mock.patch.object(DefaultTransport, "post", return_value=response.encode()):
+            payload_obj = ConsStatServ(
+                tpAmb=NFeTamb.VALUE_2,
+                cUF=NFeTcodUfIbge.VALUE_42,
+                xServ=TconsStatServXServ.STATUS,
+                versao="4.00",
+            )
+            wrapped_payload = {"Body": {"nfeDadosMsg": {"content": [payload_obj]}}}
+            result = client.send(
+                action_class=NfeStatusServico4SoapNfeStatusServicoNf,
+                location="http://fake.location.com/service",
+                wrapped_obj=wrapped_payload,
+            )
+
+        self.assertIs(result.request_obj, result.envio_raiz)
+        self.assertIs(result.request_xml, result.envio_xml)
+        self.assertIs(result.response_obj, result.resposta)
+        self.assertIs(result.response, result.retorno)
+        self.assertEqual(
+            result.retorno.text.splitlines()[0],
+            '<?xml version="1.0" encoding="utf-8"?>',
+        )
+
+    def test_repr_with_no_uf(self):
+        client = FiscalClient(
+            ambiente=Tamb.DEV,
+            versao="4.00",
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+        )
+
+        self.assertIn("uf=None", repr(client))
+
     @mock.patch.object(DefaultTransport, "post")
     def test_send_force_soap12_request(self, mock_post):
         """Verify request uses SOAP 1.2 when soap12_envelope=True."""

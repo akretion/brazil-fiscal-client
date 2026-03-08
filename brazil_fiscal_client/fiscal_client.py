@@ -17,7 +17,7 @@ from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.client import Client, ClientValueError, Config
 from xsdata.formats.dataclass.parsers import DictDecoder
 
-_logger = logging.Logger(__name__)
+_logger = logging.getLogger(__name__)
 
 RETRIES = 3
 BACKOFF_FACTOR = 0.1
@@ -76,6 +76,11 @@ class WrappedHTTPResponse:
     content: bytes  # TODO str
     status_code: int
 
+    @property
+    def text(self) -> str:
+        """Mirror requests.Response.text for easier migration."""
+        return self.content.decode(errors="replace")
+
 
 @dataclass()
 class WrappedResponse:
@@ -86,6 +91,26 @@ class WrappedResponse:
     envio_xml: bytes  # TODO make it an alias of request_xml + str
     resposta: Any  # TODO make it an alias of response obj
     retorno: WrappedHTTPResponse  # TODO make it an alias of response
+
+    @property
+    def request_obj(self) -> Any:
+        """Alias for future API naming."""
+        return self.envio_raiz
+
+    @property
+    def request_xml(self) -> bytes:
+        """Alias for future API naming."""
+        return self.envio_xml
+
+    @property
+    def response_obj(self) -> Any:
+        """Alias for future API naming."""
+        return self.resposta
+
+    @property
+    def response(self) -> WrappedHTTPResponse:
+        """Alias for future API naming."""
+        return self.retorno
 
 
 class FiscalClient(Client):
@@ -121,6 +146,8 @@ class FiscalClient(Client):
         contingencia: bool = False,
         **kwargs: Any,
     ):
+        self.uf: str | None = None
+
         if isinstance(ambiente, str):
             if ambiente not in [t.value for t in Tamb]:
                 raise ValueError(
