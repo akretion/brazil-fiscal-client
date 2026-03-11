@@ -129,6 +129,7 @@ class FiscalClient(Client):
             self.ambiente = ambiente
         else:
             self.ambiente = ambiente.value
+        self.uf = None
         if isinstance(uf, str):
             if uf not in [t.value for t in TcodUfIbge]:
                 raise ValueError(f"Invalid uf value: {uf}")
