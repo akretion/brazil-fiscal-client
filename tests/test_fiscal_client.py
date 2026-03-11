@@ -213,10 +213,10 @@ class FiscalClientTests(TestCase):
                 wrapped_obj=wrapped_payload,
             )
 
-        self.assertIs(result.request_obj, result.envio_raiz)
-        self.assertIs(result.request_xml, result.envio_xml)
-        self.assertIs(result.response_obj, result.resposta)
-        self.assertIs(result.response, result.retorno)
+        self.assertIs(result.envio_raiz, result.request_obj)
+        self.assertIs(result.envio_xml, result.request_xml)
+        self.assertIs(result.resposta, result.response_obj)
+        self.assertIs(result.retorno, result.response)
         self.assertEqual(
             result.retorno.text.splitlines()[0],
             '<?xml version="1.0" encoding="utf-8"?>',

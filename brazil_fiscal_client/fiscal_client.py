@@ -84,33 +84,33 @@ class WrappedHTTPResponse:
 
 @dataclass()
 class WrappedResponse:
-    """Wrapper to better simulate the erpbrasil.edoc legacy API."""
+    """Compatibility wrapper around SOAP response metadata."""
 
     webservice: str
-    envio_raiz: Any  # TODO make it an alias of request_obj
-    envio_xml: bytes  # TODO make it an alias of request_xml + str
-    resposta: Any  # TODO make it an alias of response obj
-    retorno: WrappedHTTPResponse  # TODO make it an alias of response
+    request_obj: Any
+    request_xml: bytes
+    response_obj: Any
+    response: WrappedHTTPResponse
 
     @property
-    def request_obj(self) -> Any:
-        """Alias for future API naming."""
-        return self.envio_raiz
+    def envio_raiz(self) -> Any:
+        """Backward compatibility alias for legacy API."""
+        return self.request_obj
 
     @property
-    def request_xml(self) -> bytes:
-        """Alias for future API naming."""
-        return self.envio_xml
+    def envio_xml(self) -> bytes:
+        """Backward compatibility alias for legacy API."""
+        return self.request_xml
 
     @property
-    def response_obj(self) -> Any:
-        """Alias for future API naming."""
-        return self.resposta
+    def resposta(self) -> Any:
+        """Backward compatibility alias for legacy API."""
+        return self.response_obj
 
     @property
-    def response(self) -> WrappedHTTPResponse:
-        """Alias for future API naming."""
-        return self.retorno
+    def retorno(self) -> WrappedHTTPResponse:
+        """Backward compatibility alias for legacy API."""
+        return self.response
 
 
 class FiscalClient(Client):
@@ -277,10 +277,10 @@ class FiscalClient(Client):
 
             return WrappedResponse(
                 webservice=action_class.soapAction.split("/")[-1],
-                envio_raiz=placeholder_content,
-                envio_xml=data.encode(),
-                resposta=res,
-                retorno=WrappedHTTPResponse(content=original_response, status_code=200),
+                request_obj=placeholder_content,
+                request_xml=data.encode(),
+                response_obj=res,
+                response=WrappedHTTPResponse(content=original_response, status_code=200),
             )
         except RequestException as e:
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
