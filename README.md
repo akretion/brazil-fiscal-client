@@ -10,7 +10,7 @@ This client is designed to be inherited by specialized clients such as for elect
 invoicing (NFe). But with some extra boiler plate code to deal with the SOAP enveloppe,
 it can still be used alone as you can see in the usage section below.
 
-It uses [xsdata](https://github.com/tefra/xsdata) for the
+It uses [xsdata](https://github.com/tefra/xsdata) as a soft dependency for the
 [databinding](https://xsdata.readthedocs.io/en/latest/data_binding/basics/) and it
 overrides its SOAP
 [client](https://xsdata.readthedocs.io/en/latest/codegen/wsdl_modeling/#client)
@@ -18,6 +18,11 @@ overrides its SOAP
 ## Installation
 
 `pip install brazil-fiscal-client`
+
+If you want xsdata databinding/parsing support (recommended for nfelib/Odoo and advanced
+SOAP use cases), install the optional extra:
+
+`pip install brazil-fiscal-client[xsdata]`
 
 ## Usage
 
@@ -77,3 +82,31 @@ downloaded wsdl file and using the
 [WSDL xsdata generator](https://xsdata.readthedocs.io/en/latest/codegen/wsdl_modeling/).
 All this is usually done in the specialized clients that override this base
 `brazil-fiscal-client`SOAP client.
+
+## Usage without xsdata (requests-only mode)
+
+If `xsdata` is not installed, `FiscalClient` still works for basic SOAP calls using
+plain XML payloads (string/bytes). In this mode, `send()` returns the raw SOAP XML
+response string.
+
+```python
+from brazil_fiscal_client.fiscal_client import FiscalClient
+
+client = FiscalClient(
+    ambiente="2",
+    versao="4.00",
+    pkcs12_data=pkcs12_data,
+    pkcs12_password=certificate_password,
+    fake_certificate=True,
+)
+
+raw_response_xml = client.send(
+    action_class=None,  # not required in requests-only mode
+    location="https://example.com/service",
+    wrapped_obj="""
+        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+          <soapenv:Body>...</soapenv:Body>
+        </soapenv:Envelope>
+    """,
+)
+```
