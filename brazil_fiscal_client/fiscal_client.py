@@ -45,7 +45,7 @@ else:
         """Fallback base class used when xsdata isn't installed."""
 
 
-_logger = logging.Logger(__name__)
+_logger = logging.getLogger(__name__)
 
 RETRIES = 3
 BACKOFF_FACTOR = 0.1
@@ -104,16 +104,41 @@ class WrappedHTTPResponse:
     content: bytes  # TODO str
     status_code: int
 
+    @property
+    def text(self) -> str:
+        """Mirror requests.Response.text for easier migration."""
+        return self.content.decode(errors="replace")
+
 
 @dataclass()
 class WrappedResponse:
-    """Wrapper to better simulate the erpbrasil.edoc legacy API."""
+    """Compatibility wrapper around SOAP response metadata."""
 
     webservice: str
-    envio_raiz: Any  # TODO make it an alias of request_obj
-    envio_xml: bytes  # TODO make it an alias of request_xml + str
-    resposta: Any  # TODO make it an alias of response obj
-    retorno: WrappedHTTPResponse  # TODO make it an alias of response
+    request_obj: Any
+    request_xml: bytes
+    response_obj: Any
+    response: WrappedHTTPResponse
+
+    @property
+    def envio_raiz(self) -> Any:
+        """Backward compatibility alias for legacy API."""
+        return self.request_obj
+
+    @property
+    def envio_xml(self) -> bytes:
+        """Backward compatibility alias for legacy API."""
+        return self.request_xml
+
+    @property
+    def resposta(self) -> Any:
+        """Backward compatibility alias for legacy API."""
+        return self.response_obj
+
+    @property
+    def retorno(self) -> WrappedHTTPResponse:
+        """Backward compatibility alias for legacy API."""
+        return self.response
 
 
 class FiscalClient(Client):
@@ -149,6 +174,8 @@ class FiscalClient(Client):
         contingencia: bool = False,
         **kwargs: Any,
     ):
+        self.uf: str | None = None
+
         if isinstance(ambiente, str):
             if ambiente not in [t.value for t in Tamb]:
                 raise ValueError(
@@ -288,10 +315,12 @@ class FiscalClient(Client):
 
             return WrappedResponse(
                 webservice=self._webservice_name(action_class),
-                envio_raiz=placeholder_content,
-                envio_xml=data.encode(),
-                resposta=res,
-                retorno=WrappedHTTPResponse(content=original_response, status_code=200),
+                request_obj=placeholder_content,
+                request_xml=data.encode(),
+                response_obj=res,
+                response=WrappedHTTPResponse(
+                    content=original_response, status_code=200
+                ),
             )
         except RequestException as e:
             _logger.error(f"Failed to send SOAP request to {location}: {e}")
