@@ -3,7 +3,10 @@
 
 from __future__ import annotations  # Python 3.8 compat
 
+import base64
+import binascii
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -197,7 +200,11 @@ class FiscalClient(Client):
         else:
             self.session = requests.Session()
         self.versao = versao
+        # Keep the value as given (nfelib's CommonMixin.sign_xml expects the
+        # base64 form, like erpbrasil.assinatura's Certificado did); expose the
+        # normalized raw PKCS12 bytes separately for the transport.
         self.pkcs12_data = pkcs12_data
+        self.pkcs12_bytes = self._normalize_pkcs12(pkcs12_data)
         self.pkcs12_password = pkcs12_password
         self.verify_ssl = verify_ssl
         self.service = service
@@ -266,7 +273,7 @@ class FiscalClient(Client):
             self._session.mount(
                 server,
                 Pkcs12Adapter(
-                    pkcs12_data=self.pkcs12_data,
+                    pkcs12_data=self.pkcs12_bytes,
                     pkcs12_password=self.pkcs12_password,
                 ),
             )
@@ -365,6 +372,42 @@ class FiscalClient(Client):
         )
         response.raise_for_status()
         return response.content
+
+    @staticmethod
+    def _normalize_pkcs12(value: Any) -> bytes:
+        """Normalize the certificate input to raw PKCS12 bytes.
+
+        Accepts raw bytes, a base64 encoded string/bytes (as stored in Odoo
+        Binary fields and expected by erpbrasil.assinatura) or a file path,
+        mirroring the flexibility of the legacy erpbrasil
+        ``Certificado`` class.
+        """
+        if isinstance(value, bytes):
+            # Heuristic: a valid PKCS12 blob starts with 0x30 (ASN.1 SEQUENCE);
+            # a base64 encoded one would not (unless it decodes to itself,
+            # which is not possible for a well-formed PFX).
+            try:
+                raw = base64.b64decode(value, validate=True)
+                if raw[:1] == b"\x30" and value[:1] != b"\x30":
+                    return raw
+            except (binascii.Error, ValueError):
+                pass
+            return value
+        if isinstance(value, str):
+            if os.path.exists(value):
+                with open(value, "rb") as f:
+                    return f.read()
+            try:
+                return base64.b64decode(value, validate=True)
+            except (binascii.Error, ValueError) as e:
+                raise ClientValueError(
+                    "pkcs12_data should be raw bytes, base64 encoded "
+                    "certificate or a file path."
+                ) from e
+        raise ClientValueError(
+            "pkcs12_data should be raw bytes, base64 encoded certificate "
+            "or a file path."
+        )
 
     @staticmethod
     def _webservice_name(action_class: Any) -> str:

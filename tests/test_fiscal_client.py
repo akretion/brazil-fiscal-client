@@ -1,3 +1,4 @@
+import base64
 from os import environ
 from unittest import TestCase, mock
 
@@ -435,3 +436,59 @@ class FiscalClientTests(TestCase):
 
         with self.assertRaisesRegex(ClientValueError, "xsdata is not installed"):
             client.prepare_payload({"Body": {}})
+
+
+class PKCS12NormalizationTests(TestCase):
+    """pkcs12_data accepts raw bytes, base64 or a file path (erpbrasil
+    Certificado compatibility) while pkcs12_bytes is always the raw PFX."""
+
+    def _make_client(self, pkcs12_data):
+        return FiscalClient(
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
+            versao="4.00",
+            pkcs12_data=pkcs12_data,
+            pkcs12_password="123456",
+            fake_certificate=True,
+            service="nfe",
+        )
+
+    def test_raw_bytes_kept_as_is(self):
+        pfx = b"\x30" + b"\x00" * 10  # ASN.1 SEQUENCE first byte
+        client = self._make_client(pfx)
+        self.assertEqual(client.pkcs12_data, pfx)
+        self.assertEqual(client.pkcs12_bytes, pfx)
+
+    def test_base64_bytes_decoded(self):
+        pfx = b"\x30" + b"\x00" * 10
+        b64 = base64.b64encode(pfx)
+        client = self._make_client(b64)
+        self.assertEqual(client.pkcs12_data, b64)
+        self.assertEqual(client.pkcs12_bytes, pfx)
+
+    def test_base64_str_decoded(self):
+        pfx = b"\x30" + b"\x00" * 10
+        b64 = base64.b64encode(pfx).decode("utf-8")
+        client = self._make_client(b64)
+        self.assertEqual(client.pkcs12_data, b64)
+        self.assertEqual(client.pkcs12_bytes, pfx)
+
+    def test_file_path_read(self):
+        import tempfile
+
+        pfx = b"\x30" + b"\x00" * 10
+        with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as f:
+            f.write(pfx)
+            path = f.name
+        try:
+            client = self._make_client(path)
+            self.assertEqual(client.pkcs12_data, path)
+            self.assertEqual(client.pkcs12_bytes, pfx)
+        finally:
+            import os
+
+            os.unlink(path)
+
+    def test_invalid_value_raises(self):
+        with self.assertRaises(ClientValueError):
+            self._make_client(None)
