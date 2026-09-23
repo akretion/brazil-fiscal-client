@@ -492,3 +492,25 @@ class PKCS12NormalizationTests(TestCase):
     def test_invalid_value_raises(self):
         with self.assertRaises(ClientValueError):
             self._make_client(None)
+
+
+class WrappedResponseCompatTests(TestCase):
+    def test_legacy_aliases_are_writable(self):
+        from brazil_fiscal_client.fiscal_client import (
+            WrappedHTTPResponse,
+            WrappedResponse,
+        )
+
+        wr = WrappedResponse(
+            webservice="nfeStatusServicoNF",
+            request_obj=None,
+            request_xml=b"",
+            response_obj=None,
+            response=WrappedHTTPResponse(content=b"", status_code=200),
+        )
+        wr.resposta = "parsed"
+        wr.envio_xml = b"<xml/>"
+        wr.envio_raiz = "root"
+        self.assertEqual(wr.response_obj, "parsed")
+        self.assertEqual(wr.request_xml, b"<xml/>")
+        self.assertEqual(wr.request_obj, "root")

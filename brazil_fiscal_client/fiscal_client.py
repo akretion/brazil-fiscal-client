@@ -128,20 +128,36 @@ class WrappedResponse:
         """Backward compatibility alias for legacy API."""
         return self.request_obj
 
+    @envio_raiz.setter
+    def envio_raiz(self, value: Any) -> None:
+        self.request_obj = value
+
     @property
     def envio_xml(self) -> bytes:
         """Backward compatibility alias for legacy API."""
         return self.request_xml
+
+    @envio_xml.setter
+    def envio_xml(self, value: bytes) -> None:
+        self.request_xml = value
 
     @property
     def resposta(self) -> Any:
         """Backward compatibility alias for legacy API."""
         return self.response_obj
 
+    @resposta.setter
+    def resposta(self, value: Any) -> None:
+        self.response_obj = value
+
     @property
     def retorno(self) -> WrappedHTTPResponse:
         """Backward compatibility alias for legacy API."""
         return self.response
+
+    @retorno.setter
+    def retorno(self, value: WrappedHTTPResponse) -> None:
+        self.response = value
 
 
 class FiscalClient(Client):
