@@ -271,7 +271,7 @@ class FiscalClientTests(TestCase):
 
         # Check that the *request* sent used SOAP 1.2 namespace
         mock_post.assert_called_once()
-        sent_data = mock_post.call_args.kwargs.get("data", b"")
+        sent_data = mock_post.call_args.kwargs.get("data", b"").decode()
         self.assertIn(
             SOAP12_ENV_NS, sent_data, "SOAP 1.2 Namespace not found in request"
         )
@@ -313,7 +313,7 @@ class FiscalClientTests(TestCase):
 
         # Check that the *request* sent used SOAP 1.1 namespace
         mock_post.assert_called_once()
-        sent_data = mock_post.call_args.kwargs.get("data", b"")
+        sent_data = mock_post.call_args.kwargs.get("data", b"").decode()
         # Check based on prefix and namespace presence
         self.assertIn(
             'xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"', sent_data
@@ -436,6 +436,88 @@ class FiscalClientTests(TestCase):
 
         with self.assertRaisesRegex(ClientValueError, "xsdata is not installed"):
             client.prepare_payload({"Body": {}})
+
+    @mock.patch.object(DefaultTransport, "post")
+    def test_send_encodes_request_as_utf8(self, mock_post):
+        """The request goes on the wire as UTF-8 bytes declared as such.
+
+        A str body is encoded as ISO-8859-1 by http.client while the XML
+        declares UTF-8, so SEFAZ reads accented characters wrongly and
+        rejects signed documents with cStat 297 (Assinatura difere do
+        calculado).
+        """
+        mock_post.return_value = response.encode()
+
+        client = FiscalClient(
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
+            versao="4.00",
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+            service="nfe",
+        )
+        payload_obj = ConsStatServ(
+            tpAmb=NFeTamb.VALUE_2,
+            cUF=NFeTcodUfIbge.VALUE_42,
+            xServ=TconsStatServXServ.STATUS,
+            versao="4.00",
+        )
+        wrapped_payload = {"Body": {"nfeDadosMsg": {"content": [payload_obj]}}}
+        # signed content injected verbatim, as nfelib does with an NF-e
+        signed_content = "<NFe><xNome>Indústria e Comércio Ltda</xNome></NFe>"
+
+        client.send(
+            action_class=NfeStatusServico4SoapNfeStatusServicoNf,
+            location="http://fake.location.com/service",
+            wrapped_obj=wrapped_payload,
+            placeholder_exp=r"<consStatServ.*?</consStatServ>",
+            placeholder_content=signed_content,
+        )
+
+        sent_data = mock_post.call_args.kwargs["data"]
+        self.assertIsInstance(sent_data, bytes)
+        self.assertIn(signed_content.encode("utf-8"), sent_data)
+        sent_headers = {
+            key.lower(): value
+            for key, value in mock_post.call_args.kwargs["headers"].items()
+        }
+        self.assertIn("charset=utf-8", sent_headers["content-type"])
+
+    @mock.patch("brazil_fiscal_client.fiscal_client.XSDATA_AVAILABLE", False)
+    @mock.patch("requests.Session.post")
+    def test_send_without_xsdata_encodes_request_as_utf8(self, mock_post):
+        mock_post.return_value = mock.Mock(
+            content=response.encode(),
+            raise_for_status=mock.Mock(),
+        )
+
+        client = FiscalClient(
+            ambiente=Tamb.DEV,
+            uf=TcodUfIbge.SC,
+            versao="4.00",
+            pkcs12_data=b"fake_cert",
+            pkcs12_password="123456",
+            fake_certificate=True,
+            service="nfe",
+        )
+
+        raw_payload = (
+            "<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/'>"
+            "<soapenv:Body><xNome>Indústria e Comércio Ltda</xNome></soapenv:Body>"
+            "</soapenv:Envelope>"
+        )
+        client.send(
+            action_class=None,
+            location="https://nfe-homologacao.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+            wrapped_obj=raw_payload,
+        )
+
+        sent_data = mock_post.call_args.kwargs["data"]
+        self.assertEqual(sent_data, raw_payload.encode("utf-8"))
+        self.assertIn(
+            "charset=utf-8", mock_post.call_args.kwargs["headers"]["Content-Type"]
+        )
 
 
 class PKCS12NormalizationTests(TestCase):

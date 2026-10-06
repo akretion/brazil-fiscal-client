@@ -362,10 +362,16 @@ class FiscalClient(Client):
         """Prepare request headers.
 
         Keep xsdata behavior when available and default to plain HTTP headers
-        when running in lightweight mode without xsdata.
+        when running in lightweight mode without xsdata. Either way the
+        content type declares the UTF-8 charset the payload is encoded with
+        (see _post).
         """
         if self._xsdata_available:
-            return super().prepare_headers(headers)
+            result = super().prepare_headers(headers)
+            content_type = result.get("content-type", "text/xml")
+            if "charset" not in content_type.lower():
+                result["content-type"] = f"{content_type}; charset=utf-8"
+            return result
 
         return {
             "Content-Type": "text/xml; charset=utf-8",
@@ -377,12 +383,16 @@ class FiscalClient(Client):
         return self.transport.session if self._xsdata_available else self.session
 
     def _post(self, location: str, data: str, headers: dict) -> bytes:
+        # http.client would encode a str body as ISO-8859-1 while the XML
+        # declares UTF-8: SEFAZ then reads accented characters wrongly and
+        # rejects signed documents with cStat 297.
+        body = data.encode("utf-8")
         if self._xsdata_available:
-            return self.transport.post(location, data=data, headers=headers)
+            return self.transport.post(location, data=body, headers=headers)
 
         response = self.session.post(
             location,
-            data=data,
+            data=body,
             headers=headers,
             timeout=self.timeout,
         )
